@@ -1,57 +1,63 @@
 /* Materials */
+#![allow(dead_code, unused_imports)]
 use super::vector::*;
-use super::colour::*;
+//use super::colour::*;
 
-/*pub trait BxDF {
-    pub fn f(in: Vec3, out: Vec3) -> Float;
-    pub fn sample_f(in: Vec3, out: Vec3);
-}*/
 
-// Do I need an enum which considers whether e.g. this is a mirror and only needs one sample / this is lambert and needs many?
 
-pub fn random_float(seed: &mut u32) -> Float {
-    // Random float in [0, 1)
-    let mut x = *seed;
-    x ^= x >> 13;
-    x ^= x << 17;
-    x ^= x >> 5;
-    *seed = x;
-    let float_bits = (x & 0x007FFFFF) | 0x3F800000;
-    let float: Float = unsafe { ::core::mem::transmute(float_bits) };
-    return float - 1.0;
+/// Holds the material types I guess; this is
+/// perhaps a hack. I'd prefer much more general
+/// material types by either storing a function pointer
+/// or having materials as traits, but it seems
+/// it won't be so.
+#[derive(Copy, Clone)]
+pub enum Material {
+    Lambert, // No albedo included
+    LambertCos, // Uses cosine weighted sampling
+    Mirror,
+    Glass(Float), // Glass with refractive index
+    Light(Float), // Lights like this also absorb all light
+    Test,
 }
 
-// Random vector on unit hemisphere
-pub fn random_vector(seed: &mut u32) -> Vec3 {
-    let u1 = random_float(seed);
-    let u2 = random_float(seed);
-
-    let r = (1.-u1*u1).sqrt();
-    let phi = 2*PI*u2;
-
-    Vec3 {x: phi.cos()*r, y: phi.sin()*r, z: u1}
+/// Schlick approximation or something
+pub fn schlick(cos: Float, n_dielectric: Float) -> Float {
+    let r0 = ((1.-n_dielectric)/(1.+n_dielectric)).powf(2.);
+    r0 + (1. - r0) * (1. - cos).powf(5.)
 }
 
-pub trait Material {
-    pub fn bsdf(self, in: Vec3, normal: Vec3, seed: &mut u32) -> Option<Vec3>; // Something about samples returned, etc etc; samples in?
-    pub fn colour(self, position: Vec3) -> Colour; // -> diffuse colour if not light else emittance
+/// Refract a ray into a material with a given refractive index;
+/// TIR if the ray is too sharp
+pub fn refract(v: Vec3, n: Vec3, refr: Float) -> Option<Vec3> {
+    let dt = dot(v, n);
+    let discriminant = 1. - refr*refr * (1.- dt*dt);
+
+    if discriminant > 0. {
+        // Refract
+        Some(refr * (v + dt.abs() * n) - discriminant.sqrt() * n)
+    } else {
+        // TIR => no refracted ray
+        None
+    }
 }
 
-// Lambertian diffuse material
+/*********** Old Material definition ***********/
+
+
+/*pub trait Material {
+    fn bsdf(self, direction: Vec3, normal: Vec3) -> Option<Vec3>; // Something about samples returned, etc etc; samples in?
+    //fn colour(self, position: Vec3) -> Colour; // -> diffuse colour if not light else emittance
+}
+
+/// Lambertian diffuse material
 pub struct Lambert {
-
-    pub col: Colour;
-
+    pub col: Colour,
 }
 
 impl Material for Lambert {
-    pub fn bsdf(self, in: Vec3, normal: Vec3, seed: &mut u32) -> Option<Vec3> {
-        let random: Vec3 = random_vector(seed);
+    fn bsdf(self, _: Vec3, normal: Vec3) -> Option<Vec3> {
+        let random: Vec3 = random_vector();
 
-        dot(random, normal).sign() * random
+        Some(dot(random, normal).signum() * random)
     }
-
-    pub fn colour(self, _: Vec3) -> Colour {
-        self.col
-    }
-}
+}*/
