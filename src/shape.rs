@@ -38,14 +38,15 @@ impl Triangle {
 impl Shape for Triangle {
     fn intersect(&self, ray: Ray) -> Option<Hit> {
         let norm_dot_d = dot(ray.direction, self.normal);
-        let normdot_o = dot(ray.origin, self.normal);
+        let norm_dot_o = dot(ray.origin, self.normal);
 
-        if norm_dot_d < EPS {
-            let t = (dot(self.a, self.normal)-normdot_o)/norm_dot_d;
+        if norm_dot_d.abs() > EPS {
+            let t = (dot(self.a, self.normal)-norm_dot_o)/norm_dot_d;
 
-            let point = ray.origin + t*ray.direction;
+            //let point = ray.origin + t*ray.direction;
+            let point = ray.eval(t);
 
-            if t > EPS && dot(self.normal, cross(point-self.a, self.b-self.a)) <= EPS && dot(self.normal, cross(point-self.b, self.c-self.b)) <= EPS && dot(self.normal, cross(point-self.c, self.a-self.c)) <= EPS {
+            if t > EPS && dot(self.normal, cross(point-self.a, self.b-self.a)) <= 10. * EPS && dot(self.normal, cross(point-self.b, self.c-self.b)) <= 10. * EPS && dot(self.normal, cross(point-self.c, self.a-self.c)) <= 10. * EPS {
                 Some(Hit {
                     dist: t,
                     point: point,

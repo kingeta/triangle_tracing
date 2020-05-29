@@ -24,7 +24,9 @@ use minifb::{Key, Window, WindowOptions};
 
 use rayon::prelude::*;
 
-fn render<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, height: usize, samples: usize, filename: String) {
+use std::time::Instant;
+
+fn render<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, height: usize, samples: usize, depth: usize, filename: String) {
     // The final image
     let mut result: RgbImage = ImageBuffer::new(width as u32, height as u32);
 
@@ -60,7 +62,7 @@ fn render<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, height: usi
         col = Colour::BLACK;
         
         for _ in 0..samples {
-            col += trace(scene, camera.generate_ray(x as usize, y as usize, width, height), 4);
+            col += trace(scene, camera.generate_ray(x as usize, y as usize, width, height), depth);
         }
 
         *pixel = (col / samples as Float).to_image_rgb();
@@ -72,7 +74,7 @@ fn render<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, height: usi
 }
 
 
-fn render_iter<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, height: usize, samples: usize) {
+fn render_iter<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, height: usize, samples: usize, depth: usize) {
     let mut buffer: Vec<u32> = vec![0; width*height];
 
     /*
@@ -90,7 +92,7 @@ fn render_iter<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, height
         let y = i / height;
 
         for _ in 0..samples {
-            colour += trace(scene, camera.generate_ray(x, y, width, height), 5)
+            colour += trace(scene, camera.generate_ray(x, y, width, height), depth)
         }
 
         buffer[i] = (colour / samples as Float).to_u32_rgb();
@@ -105,7 +107,7 @@ fn render_iter<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, height
 }
 
 
-fn render_window<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, height: usize) {
+fn render_window<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, height: usize, depth: usize) {
 
     let mut backbuffer = vec![Colour::ZERO; width * height];
     let mut buffer: Vec<u32> = vec![0; width * height];
@@ -121,7 +123,7 @@ fn render_window<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, heig
         samples += 1;
         for x in 0..width {
             for y in 0..height {
-                backbuffer[x + y * width] += trace(scene, camera.generate_ray(x, y, width, height), 5);
+                backbuffer[x + y * width] += trace(scene, camera.generate_ray(x, y, width, height), depth);
                 buffer[x + y * width] = (backbuffer[x + y * width]/samples as Float).to_u32_rgb()
             }
         }
@@ -131,7 +133,7 @@ fn render_window<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, heig
     }
 }
 
-fn render_window_iter<O: Object, C: Camera>(scene: &O, camera: &mut C, width: usize, height: usize) {
+fn render_window_iter<O: Object, C: Camera>(scene: &O, camera: &mut C, width: usize, height: usize, depth: usize) {
     let mut pixels: Vec<(usize, usize)> = vec![];
 
     for y in 0..height {
@@ -199,7 +201,7 @@ fn render_window_iter<O: Object, C: Camera>(scene: &O, camera: &mut C, width: us
         */
 
         backbuffer = backbuffer.iter().zip(pixels.iter()).map(|(col, (x, y))| {
-            *col + trace(scene, camera.generate_ray(*x, *y, width, height), 5)
+            *col + trace(scene, camera.generate_ray(*x, *y, width, height), depth)
         }).collect();
 
         buffer = backbuffer.par_iter().map(|&col| (col/samples as Float).to_u32_rgb()).collect();
@@ -212,21 +214,24 @@ fn render_window_iter<O: Object, C: Camera>(scene: &O, camera: &mut C, width: us
 
 
 fn main() {
-    //let cornell_camera_pos = Vec3::new(0., 0., -1.);
-    //let cornell_camera = camera::SimpleCamera::new(PI/2., cornell_camera_pos, -cornell_camera_pos.normalise(), Vec3::Y);
+    let now = Instant::now();
 
-    let sphere_camera_pos = Vec3::new(2., 0.3, -4.);
-    let mut sphere_camera = camera::SimpleCamera::new(PI/2., sphere_camera_pos, -sphere_camera_pos.normalise(), Vec3::Y);
+    let cornell_camera_pos = Vec3::new(0., 0., -3.1);
+    let mut cornell_camera = camera::SimpleAACamera::new(PI/3., cornell_camera_pos, -cornell_camera_pos.normalise(), Vec3::Y);
+
+    let setting_up = now.elapsed().as_millis();
+    println!("Setting up: {} milliseconds", setting_up);
+    //let sphere_camera_pos = Vec3::new(2., 0.3, -4.);
+    //let mut sphere_camera = camera::SimpleCamera::new(PI/2., sphere_camera_pos, -sphere_camera_pos.normalise(), Vec3::Y);
 
     
-    render_window_iter(&sphere_test_scene(), &mut sphere_camera, 1280, 720);
+    render_window_iter(&cornell_box_scene(), &mut cornell_camera, 512, 512, 4); //, "test.png".to_string()
 
-    println!("All done");
-
+    println!("Rendering: {} milliseconds", now.elapsed().as_millis() - setting_up);
 }
 
 /// Test background
-fn _background(_: Ray) -> Colour {
+fn background(_: Ray) -> Colour {
     Colour::BLACK
 }
 
@@ -235,7 +240,7 @@ const SUN_DIRECTION: Vec3 = Vec3::new(-0.577350, 0.577350, -0.577350);
 const SKY_COLOUR: Colour = Colour::new(0.45, 0.68, 0.87);
 
 /// Looks a bit like the real sky or whatever
-fn background(ray: Ray) -> Colour {
+fn _background(ray: Ray) -> Colour {
     let sun = (dot(SUN_DIRECTION, ray.direction) + 0.03).min(1.).max(0.).powf(300.) * Colour::WHITE;
     
     let lerp = (0.5 + ray.direction.y/2.).powf(1.5);
@@ -254,24 +259,28 @@ fn trace<T: Object>(scene: &T, ray: Ray, depth: usize) -> Colour {
         // whilst ignoring distance which isn't used. I'm not sure whether
         // this is fast or not
         Some(ObjectHit{point, normal, dist: _, material, colour}) => colour * match material {
-            Material::Lambert => {
+            Material::Lambert(albedo) => {
                 let new_direction = random_hemisphere(normal);
                 if dot(new_direction, normal) <= 0. {
                     println!("Now this is good")
                 }
-                2. * dot(new_direction, normal).max(0.) * trace(scene,
+                2. * dot(new_direction, normal).max(0.) * albedo * trace(scene,
                     Ray::new(point + EPS * normal, new_direction), depth - 1)
             },
 
-            Material::LambertCos => {
-                let new_direction = random_hemisphere_cosine(normal);
+            Material::LambertCos(albedo) => {
 
-                trace(scene, Ray::new(point + EPS * normal, new_direction), depth - 1)
+                if dot(ray.direction, normal) < 0. {
+                    let new_direction = random_hemisphere_cosine(normal);
+                    albedo * trace(scene, Ray::new(point + EPS * normal, new_direction), depth - 1)
+                } else {
+                    Colour::BLACK
+                }
             }
 
-            Material::Mirror => {
+            Material::Mirror(albedo) => {
                 let new_direction = reflect(ray.direction, normal); // dot(new_direction, normal).max(0.) * 
-                trace(scene,
+                albedo * trace(scene,
                     Ray::new(point + EPS * normal, new_direction), depth - 1)
             },
 
@@ -315,8 +324,20 @@ fn trace<T: Object>(scene: &T, ray: Ray, depth: usize) -> Colour {
 
             }
 
-            Material::Light(intensity) => intensity * Colour::WHITE,
+            Material::Scatter(g) => {
+                let new_direction = random_float().signum() * random_vector(); // Not great way of sampling from whole sphere
+                let cos = dot(new_direction, ray.direction);
+
+                henyey_greenstein(cos, g) * colour * trace(scene,
+                    Ray::new(point, new_direction), depth - 1)/ (2.*PI)
+            }
+
+            Material::Light(intensity) => intensity * Colour::WHITE, // Note lights are omnidirectional; they light in front and behind of themselves
             
+            Material::LightUni(intensity) => intensity * dot(normal, ray.direction).is_sign_negative() as usize as Float * Colour::WHITE, // Unidirectional light
+            
+            Material::LightCos(intensity) => dot(ray.direction, -normal).max(0.).powf(100.) * intensity * Colour::WHITE, // This is unidirectional
+
             Material::Test => Colour::WHITE,
         },
 
@@ -328,53 +349,90 @@ fn cornell_box_scene() -> Vec<Box<dyn Object>> {
 
     let red = Colour::new(0.71, 0., 0.);
     let green = Colour::new(0., 0.71, 0.);
+    let factor: Float = 1.02; // Extend all squares a bit at the edge
 
-    let bottom = GeneralObject {
+    let _bottom = GeneralObject {
         shape: Plane {
             normal: Vec3::Y,
             size: -1.,
         },
-        material: material::Material::LambertCos,
+        material: material::Material::LambertCos(0.9),
         colour: Colour::WHITE,
     };
 
-    let top = GeneralObject {
+    let bottom2 = ObjectCollection::<Triangle>::square(
+            -Vec3::Y + factor * (Vec3::Z + Vec3::X),
+            -Vec3::Y + factor * (Vec3::Z - Vec3::X),
+            -Vec3::Y + factor * (-Vec3::Z - Vec3::X),
+            -Vec3::Y + factor * (-Vec3::Z + Vec3::X),
+            Material::LambertCos(0.8), Colour::WHITE);
+
+    let _top = GeneralObject {
         shape: Plane {
-            normal: -Vec3::Y,
-            size: -1.,
+            normal: Vec3::Y,
+            size: 1.,
         },
-        material: material::Material::LambertCos,
+        material: material::Material::LambertCos(0.9),
         colour: Colour::WHITE,
     };
 
-    let left = GeneralObject {
+    let top2 = ObjectCollection::<Triangle>::square(
+            Vec3::Y + factor * (Vec3::Z + Vec3::X),
+            Vec3::Y + factor * (-Vec3::Z + Vec3::X),
+            Vec3::Y + factor * (-Vec3::Z - Vec3::X),
+            Vec3::Y + factor * (Vec3::Z - Vec3::X),
+            Material::LambertCos(0.8), Colour::WHITE);
+
+    let _left = GeneralObject {
         shape: Plane {
             normal: -Vec3::X,
             size: -1.,
         },
-        material: material::Material::LambertCos,
+        material: material::Material::LambertCos(0.9),
         colour: red,
     };
 
-    let right = GeneralObject {
+    let left2 = ObjectCollection::<Triangle>::square(
+            Vec3::X + factor * (Vec3::Y - Vec3::Z),
+            Vec3::X + factor * (Vec3::Y + Vec3::Z),
+            Vec3::X + factor * (-Vec3::Y + Vec3::Z),
+            Vec3::X + factor * (-Vec3::Y - Vec3::Z),
+            Material::LambertCos(0.8), red);
+
+    let _right = GeneralObject {
         shape: Plane {
             normal: Vec3::X,
             size: -1.,
         },
-        material: material::Material::LambertCos,
+        material: material::Material::LambertCos(0.9),
         colour: green,
     };
 
-    let back = GeneralObject {
+    let right2 = ObjectCollection::<Triangle>::square(
+            -Vec3::X + factor * (Vec3::Y + Vec3::Z),
+            -Vec3::X + factor * (Vec3::Y - Vec3::Z),
+            -Vec3::X + factor * (-Vec3::Y - Vec3::Z),
+            -Vec3::X + factor * (-Vec3::Y + Vec3::Z),
+            Material::LambertCos(0.8), green);
+
+    let _back = GeneralObject {
         shape: Plane {
             normal: -Vec3::Z,
             size: -1.,
         },
-        material: material::Material::LambertCos,
+        material: material::Material::LambertCos(0.9),
         colour: Colour::WHITE,
     };
 
-    let light = GeneralObject {
+    let back2 = ObjectCollection::<Triangle>::square(
+            Vec3::Z + 1.05*(Vec3::X + Vec3::Y),
+            Vec3::Z + factor * (-Vec3::X + Vec3::Y),
+            Vec3::Z + factor * (-Vec3::X - Vec3::Y),
+            Vec3::Z + factor * (Vec3::X - Vec3::Y),
+            Material::LambertCos(0.8), Colour::WHITE);
+
+
+    let _light = GeneralObject {
         shape: Sphere {
             centre: Vec3::Y,
             radius: 0.6,
@@ -383,7 +441,40 @@ fn cornell_box_scene() -> Vec<Box<dyn Object>> {
         colour: Colour::new(0.859, 0.776, 0.569),
     };
 
-    vec![Box::new(bottom), Box::new(top), Box::new(left), Box::new(right), Box::new(back), Box::new(light)]
+    let light2 = ObjectCollection::<Triangle>::square(
+            0.98 * Vec3::Y + 0.6 * (Vec3::Z + Vec3::X), 
+            0.98 * Vec3::Y + 0.6 * (-Vec3::Z + Vec3::X),
+            0.98 * Vec3::Y + 0.6 * (-Vec3::Z - Vec3::X),
+            0.98 * Vec3::Y + 0.6 * (Vec3::Z - Vec3::X),
+            Material::LightUni(3.), Colour::new(1.0, 0.776, 0.4));
+
+    
+    let mirror_ball = GeneralObject::<Sphere> {
+        shape: Sphere {
+            centre: Vec3::new(0.45, -0.7, 0.),
+            radius: 0.3,
+        },
+        material: Material::Mirror(1.),
+        colour: Colour::WHITE
+    };
+    
+    let glass_ball = GeneralObject::<Sphere> {
+        shape: Sphere {
+            centre: Vec3::new(-0.45, -0.6, -0.2),
+            radius: 0.4,
+        },
+        material: Material::Glass(1.54),
+        colour: Colour::WHITE
+    };
+    
+    let gas = MediumObject {
+        density: 0.3,
+        material: Material::Scatter(1.),
+        colour: Colour::WHITE,
+    };
+
+    vec![Box::new(gas), Box::new(bottom2), Box::new(top2), Box::new(left2), Box::new(right2), Box::new(back2), Box::new(light2), Box::new(mirror_ball), Box::new(glass_ball)]
+    //vec![Box::new(gas), Box::new(light2), Box::new(mirror_ball), Box::new(glass_ball)]
 }
 
 
@@ -402,7 +493,7 @@ fn sphere_test_scene() -> Vec<Box<dyn Object>> {
             centre: -Vec3::X,
             radius: 1.,
         },
-        material: Material::LambertCos,
+        material: Material::LambertCos(0.9),
         colour: Colour::new(1., 1., 0.),
     };
 
@@ -411,13 +502,13 @@ fn sphere_test_scene() -> Vec<Box<dyn Object>> {
             centre: -3. * Vec3::X - 0.2 * Vec3::Y,
             radius: 0.8,
         },
-        material: Material::Mirror,
+        material: Material::Mirror(0.95),
         colour: Colour::new(0.8, 0.4, 0.4),
     };
 
     let floor = GeneralObject::<Plane> {
         shape: Plane::new(Vec3::Y, -Vec3::Y),
-        material: Material::LambertCos,
+        material: Material::LambertCos(0.9),
         colour: Colour::new(0.3, 0.25, 0.25),
     };
 
@@ -440,7 +531,7 @@ fn obj_scene() -> Vec<Box<dyn Object>> {
     
     let floor = GeneralObject::<Plane> {
         shape: Plane::new(Vec3::Y, -Vec3::Y),
-        material: Material::LambertCos,
+        material: Material::LambertCos(0.9),
         colour: Colour::new(0.3, 0.25, 0.25),
     };
 

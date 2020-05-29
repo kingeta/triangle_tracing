@@ -12,11 +12,14 @@ use super::vector::*;
 /// it won't be so.
 #[derive(Copy, Clone)]
 pub enum Material {
-    Lambert, // No albedo included
-    LambertCos, // Uses cosine weighted sampling
-    Mirror,
+    Lambert(Float), // albedo included
+    LambertCos(Float), // Uses cosine weighted sampling
+    Mirror(Float), // Albedo here for some reason
     Glass(Float), // Glass with refractive index
-    Light(Float), // Lights like this also absorb all light
+    Light(Float), // Lights like this also absorb all incoming light
+    LightUni(Float), // A light which only emits on the normal facing side
+    LightCos(Float), // Cosine weighted light, which is also unidirectional
+    Scatter(Float), // Henyey-Greenstein phase function thing
     Test,
 }
 
@@ -41,23 +44,8 @@ pub fn refract(v: Vec3, n: Vec3, refr: Float) -> Option<Vec3> {
     }
 }
 
-/*********** Old Material definition ***********/
-
-
-/*pub trait Material {
-    fn bsdf(self, direction: Vec3, normal: Vec3) -> Option<Vec3>; // Something about samples returned, etc etc; samples in?
-    //fn colour(self, position: Vec3) -> Colour; // -> diffuse colour if not light else emittance
+/// Henyey-Greenstein phase function, taking cos = cos(theta) (instead of theta)
+/// -1 <= g <= 1
+pub fn henyey_greenstein(cos: Float, g: Float) -> Float {
+    0.5 * (1. - g*g)/(1. + g*g - 2.*g*cos).powf(1.5)
 }
-
-/// Lambertian diffuse material
-pub struct Lambert {
-    pub col: Colour,
-}
-
-impl Material for Lambert {
-    fn bsdf(self, _: Vec3, normal: Vec3) -> Option<Vec3> {
-        let random: Vec3 = random_vector();
-
-        Some(dot(random, normal).signum() * random)
-    }
-}*/

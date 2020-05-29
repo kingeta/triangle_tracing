@@ -49,6 +49,25 @@ pub struct ObjectCollection<T: Shape> {
     pub colour: Colour,
 }
 
+impl ObjectCollection<Triangle> {
+    // Create a square given the four points which go clockwise from top left (conventionally)
+    pub fn square(a: Vec3, b: Vec3, c: Vec3, d: Vec3, material: Material, colour: Colour) -> ObjectCollection<Triangle> {
+
+        ObjectCollection::<Triangle> {
+        shapes: vec![
+            Triangle::new(
+                a, d, b, // Top left triangle
+            ),
+            Triangle::new(
+                b, d, c, // Bottom right triangle
+            )
+        ],
+        material: material,
+        colour: colour,
+        }
+    }
+}
+
 //impl Object for TriangleCollection {
 impl<T> Object for ObjectCollection<T> where T: Shape {
     fn intersect(&self, ray: Ray) -> Option<ObjectHit> {
@@ -73,6 +92,7 @@ impl<T> Object for ObjectCollection<T> where T: Shape {
 
     }
 }
+
 
 /*
 /// Contains multiple different shapes
@@ -146,4 +166,28 @@ pub fn convert_objects_to_polygons(obj: &Obj<obj::SimplePolygon>) -> Vec<Triangl
     }
 
     return polygons;
+}
+
+
+/// A participating medium with given density;
+/// should probably use the gas material type
+pub struct MediumObject {
+    pub density: Float,
+    pub material: Material,
+    pub colour: Colour,
+}
+
+impl Object for MediumObject {
+    fn intersect(&self, ray: Ray) -> Option<ObjectHit> {
+        let dist = -(-random_float()).ln_1p() / self.density;
+
+        Some(ObjectHit {
+            point: ray.eval(dist),
+            normal: ray.direction,
+            dist: dist,
+            material: self.material,
+            colour: self.colour,
+        })
+    }
+
 }

@@ -63,4 +63,56 @@ impl Camera for SimpleCamera {
             + direction.y * self.side
             + direction.z * self.up;
     }
+}
+
+
+
+/// A camera with no DOF etc but AA
+/// The FOV is horizontal
+pub struct SimpleAACamera {
+    pub tan_half_fov: Float,
+    pub position: Vec3,
+    pub looking: Vec3,
+    pub side: Vec3,
+    pub up: Vec3,
+}
+
+impl SimpleAACamera {
+    pub fn new(fov: Float, position: Vec3, looking: Vec3, global_up: Vec3) -> SimpleAACamera {
+        let (side, up) = directions(looking, global_up);
+        SimpleAACamera {
+            tan_half_fov: (fov / 2.).tan(),
+            position: position,
+            looking: looking,
+            side: side,
+            up: up,
+        }
+    }
+}
+
+impl Camera for SimpleAACamera {
+    fn generate_ray(&self, x: usize, y: usize, width: usize, height: usize) -> Ray {
+        //let x_bar = 1. - (2*x) as Float/width as Float;
+        //let y_bar = (height as Float - 2. * y as Float)/width as Float;
+
+        //Ray {origin: self.position,
+        //    direction: (self.looking + self.tan_half_fov * (x_bar * self.side + y_bar * self.up)).normalise()}
+            
+        //let x_bar = width as Float - (2 * x) as Float;
+        let x_bar = width as Float - 2. * (x as Float + random_float());
+
+        //let y_bar = height as Float - (2 * y) as Float;
+        let y_bar = height as Float - 2. * (y as Float + random_float());
+
+        Ray {origin: self.position,
+            direction: (width as Float*self.looking + self.tan_half_fov*(x_bar*self.side + y_bar*self.up)).normalise()}
+    
+    }
+
+
+    fn translate(&mut self, direction: Vec3) {
+        self.position += direction.x * self.looking
+            + direction.y * self.side
+            + direction.z * self.up;
+    }
  }
