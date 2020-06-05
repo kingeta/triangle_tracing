@@ -195,7 +195,7 @@ fn main() {
     // render(&cornell_phone_scene(), &cornell_camera, 1440, 3120, 512, 4, "phone_cornell.png".to_string()); //, "test.png".to_string()
 
     let cornell_camera_pos = Vec3::new(0., 0., -3.1);
-    let mut cornell_camera = DOFCamera::new(PI/3., cornell_camera_pos, -cornell_camera_pos.normalise(), Vec3::Y, 3.1, 0.2);
+    let mut cornell_camera = DOFCamera::new(PI/3., cornell_camera_pos, -cornell_camera_pos.normalise(), Vec3::Y, 3.1, 0.02);
 
     let sphere_camera_pos = Vec3::new(4., 0.6, -8.);
     let mut sphere_camera = DOFCamera::new(PI/3., sphere_camera_pos, -sphere_camera_pos.normalise(), Vec3::Y, sphere_camera_pos.norm(), 0.05);
@@ -331,21 +331,21 @@ fn cornell_box_scene() -> Vec<Box<dyn Object + Sync + Send>> {
     let green = Colour::new(0., 0.71, 0.);
     let factor: Float = 1.01; // Extend all squares a bit at the edge
 
-    let bottom2 = ObjectCollection::<Triangle>::rect(
+    let bottom = ObjectCollection::<Triangle>::rect(
             -Vec3::Y + factor * (Vec3::Z + Vec3::X),
             -Vec3::Y + factor * (Vec3::Z - Vec3::X),
             -Vec3::Y + factor * (-Vec3::Z - Vec3::X),
             -Vec3::Y + factor * (-Vec3::Z + Vec3::X),
             Material::LambertCos(0.8), Colour::WHITE);
 
-    let top2 = ObjectCollection::<Triangle>::rect(
+    let top = ObjectCollection::<Triangle>::rect(
             Vec3::Y + factor * (Vec3::Z + Vec3::X),
             Vec3::Y + factor * (-Vec3::Z + Vec3::X),
             Vec3::Y + factor * (-Vec3::Z - Vec3::X),
             Vec3::Y + factor * (Vec3::Z - Vec3::X),
             Material::LambertCos(0.8), Colour::WHITE);
 
-    let left2 = ObjectCollection::<Triangle>::rect(
+    let left = ObjectCollection::<Triangle>::rect(
             Vec3::X + factor * (Vec3::Y - Vec3::Z),
             Vec3::X + factor * (Vec3::Y + Vec3::Z),
             Vec3::X + factor * (-Vec3::Y + Vec3::Z),
@@ -353,14 +353,14 @@ fn cornell_box_scene() -> Vec<Box<dyn Object + Sync + Send>> {
             Material::LambertCos(0.8), red);
 
 
-    let right2 = ObjectCollection::<Triangle>::rect(
+    let right = ObjectCollection::<Triangle>::rect(
             -Vec3::X + factor * (Vec3::Y + Vec3::Z),
             -Vec3::X + factor * (Vec3::Y - Vec3::Z),
             -Vec3::X + factor * (-Vec3::Y - Vec3::Z),
             -Vec3::X + factor * (-Vec3::Y + Vec3::Z),
             Material::LambertCos(0.8), green);
 
-    let back2 = ObjectCollection::<Triangle>::rect(
+    let back = ObjectCollection::<Triangle>::rect(
             Vec3::Z + 1.05*(Vec3::X + Vec3::Y),
             Vec3::Z + factor * (-Vec3::X + Vec3::Y),
             Vec3::Z + factor * (-Vec3::X - Vec3::Y),
@@ -369,12 +369,12 @@ fn cornell_box_scene() -> Vec<Box<dyn Object + Sync + Send>> {
 
 
 
-    let light2 = ObjectCollection::<Triangle>::rect(
+    let light = ObjectCollection::<Triangle>::rect(
             0.99 * Vec3::Y + 0.6 * (Vec3::Z + Vec3::X), 
             0.99 * Vec3::Y + 0.6 * (-Vec3::Z + Vec3::X),
             0.99 * Vec3::Y + 0.6 * (-Vec3::Z - Vec3::X),
             0.99 * Vec3::Y + 0.6 * (Vec3::Z - Vec3::X),
-            Material::LightUni(6.), Colour::new(1.0, 0.776, 0.4));
+            Material::Light(6.), Colour::new(1.0, 0.776, 0.4));
 
     
     let mirror_ball = GeneralObject::<Sphere> {
@@ -395,14 +395,22 @@ fn cornell_box_scene() -> Vec<Box<dyn Object + Sync + Send>> {
         colour: Colour::WHITE
     };
     
+    let glass_cube = ObjectCollection::<Triangle>::cuboid(
+        Vec3::new(-0.45, -0.65, -0.2),
+        0.7 * Vec3::Y,
+        Vec3::new(3. *0.2828, 0., 0.2828) / 2.,
+        Vec3::new(-0.2828, 0., 3. * 0.2828) / 2.,
+        Material::Glass(1.54),
+        Colour::WHITE,
+    );
 
-    /*let gas = MediumObject {
-        density: 0.,
-        material: Material::Scatter(1.),
+    let gas = MediumObject {
+        density: 1.,
+        material: Material::Scatter(0.65),
         colour: Colour::WHITE,
-    };*/
+    };
 
-    vec![Box::new(bottom2), Box::new(top2), Box::new(left2), Box::new(right2), Box::new(back2), Box::new(light2), Box::new(mirror_ball), Box::new(glass_ball)]
+    vec![Box::new(bottom), Box::new(top), Box::new(left), Box::new(right), Box::new(back), Box::new(light), Box::new(mirror_ball), Box::new(glass_cube)]
     //vec![Box::new(gas), Box::new(light2), Box::new(mirror_ball), Box::new(glass_ball)]
 }
 
