@@ -22,13 +22,13 @@ pub trait Object {
 }
 
 /// Object type which holds a single primitive
-pub struct GeneralObject<T: Shape> {
+pub struct GeneralObject<T: Shape + Sync + Send> {
     pub shape: T,
     pub material: Material,
     pub colour: Colour,
 }
 
-impl<T> Object for GeneralObject<T> where T: Shape {
+impl<T> Object for GeneralObject<T> where T: Shape + Sync + Send{
     fn intersect(&self, ray: Ray) -> Option<ObjectHit> {
         match self.shape.intersect(ray) {
             Some(vals) => Some(ObjectHit{
@@ -42,34 +42,93 @@ impl<T> Object for GeneralObject<T> where T: Shape {
 
 /// A list of triangles basically
 //pub struct TriangleCollection {
-pub struct ObjectCollection<T: Shape> {
+pub struct ObjectCollection<T: Shape + Sync + Send> {
     //pub triangles: Vec<Triangle>,
     pub shapes: Vec<T>,
     pub material: Material,
     pub colour: Colour,
 }
 
-impl ObjectCollection<Triangle> {
-    // Create a square given the four points which go clockwise from top left (conventionally)
-    pub fn square(a: Vec3, b: Vec3, c: Vec3, d: Vec3, material: Material, colour: Colour) -> ObjectCollection<Triangle> {
-
-        ObjectCollection::<Triangle> {
-        shapes: vec![
+/// Create a rect given the four points which go clockwise [from top left (conventionally)]
+fn rect(a: Vec3, b: Vec3, c: Vec3, d: Vec3) -> Vec::<Triangle> {
+    vec![
             Triangle::new(
                 a, d, b, // Top left triangle
             ),
             Triangle::new(
                 b, d, c, // Bottom right triangle
             )
-        ],
+        ]
+}
+
+impl ObjectCollection<Triangle> {
+    pub fn rect(a: Vec3, b: Vec3, c: Vec3, d: Vec3, material: Material, colour: Colour) -> ObjectCollection<Triangle> {
+
+        ObjectCollection::<Triangle> {
+        shapes: rect(a, b , c, d),
         material: material,
         colour: colour,
+        }
+    }
+
+    /// By convention for an axis aligned box up would be +Y and side +X;
+    /// this probably matters
+    pub fn cuboid(centre: Vec3, up: Vec3, side: Vec3, back: Vec3, material: Material, colour: Colour) -> ObjectCollection<Triangle> {
+        let u = up / 2.;
+        let s = side / 2.;
+        let b = back / 2.;
+
+        // Front
+        let mut shapes = rect(
+                            centre + u + s - b,
+                            centre + u - s - b,
+                            centre - u - s - b,
+                            centre - u + s - b);
+        // Back
+        shapes.append(&mut rect(
+                            centre + u + s + b,
+                            centre - u + s + b,
+                            centre - u - s + b,
+                            centre + u - s + b));
+        // Left
+        shapes.append(&mut rect(
+                            centre + s + u + b,
+                            centre + s + u - b,
+                            centre + s - u - b,
+                            centre + s - u + b,
+        ));
+        // Right
+        shapes.append(&mut rect(
+                            centre - s + u - b,
+                            centre - s + u + b,
+                            centre - s - u + b,
+                            centre - s - u - b,
+        ));
+        // Bottom
+        shapes.append(& mut rect(
+                            centre - u + s - b,
+                            centre - u - s - b,
+                            centre - u - s + b,
+                            centre - u + s + b,
+        ));
+        // Top
+        shapes.append(& mut rect(
+                            centre + u + s + b,
+                            centre + u - s + b,
+                            centre + u - s - b,
+                            centre + u + s - b,
+        ));
+
+        ObjectCollection::<Triangle> {
+            shapes: shapes,
+            material: material,
+            colour: colour,
         }
     }
 }
 
 //impl Object for TriangleCollection {
-impl<T> Object for ObjectCollection<T> where T: Shape {
+impl<T> Object for ObjectCollection<T> where T: Shape + Sync + Send {
     fn intersect(&self, ray: Ray) -> Option<ObjectHit> {
         let mut hit: Option<Hit> = None;
 
@@ -94,17 +153,7 @@ impl<T> Object for ObjectCollection<T> where T: Shape {
 }
 
 
-/*
-/// Contains multiple different shapes
-pub struct ObjectMultiple {
-    pub objects: Vec<Box<dyn Object>>,
-    pub material: Material,
-    pub colour: Colour,
-}
-
-*/
-
-impl Object for Vec<Box<dyn Object>> {
+impl Object for Vec<Box<dyn Object + Sync + Send>> where {
     fn intersect(&self, ray: Ray) -> Option<ObjectHit> {
         let mut object_hit: Option<ObjectHit> = None;
 
