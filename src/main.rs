@@ -123,7 +123,7 @@ fn render_window_iter<O: Object + Sync + Send, C: Camera + Sync + Send>(scene: &
 
     let mut samples = 0;
 
-    while window.is_open() && !window.is_key_down(Key::Escape) {
+    while window.is_open() && !window.is_key_down(Key::Escape){
         
         
         if window.is_key_down(Key::W) {
@@ -166,10 +166,13 @@ fn render_window_iter<O: Object + Sync + Send, C: Camera + Sync + Send>(scene: &
         // Rendering and pushing to the window
         samples += 1;
         
-
+        
+        // Way with the pixels vector or whatever
+        
         backbuffer = backbuffer.par_iter().zip(pixels.par_iter()).map(|(col, (x, y))| {
             *col + trace(scene, camera.generate_ray(*x, *y, width, height), depth)
         }).collect();
+        
 
         /*
         backbuffer = backbuffer.par_iter().enumerate().map(|(i, &col)| {
@@ -177,7 +180,7 @@ fn render_window_iter<O: Object + Sync + Send, C: Camera + Sync + Send>(scene: &
         }).collect();
         */
 
-        buffer = backbuffer.par_iter().map(|&col| (col/samples as Float).to_u32_rgb()).collect();
+        buffer = backbuffer.par_iter().map(|&col| (col/samples as Float).to_u32_rgb_filmic()).collect();
 
         window.update_with_buffer(&buffer, width, height).unwrap();
 
@@ -195,17 +198,16 @@ fn main() {
     // render(&cornell_phone_scene(), &cornell_camera, 1440, 3120, 512, 4, "phone_cornell.png".to_string()); //, "test.png".to_string()
 
     let cornell_camera_pos = Vec3::new(0., 0., -3.1);
-    let mut cornell_camera = DOFCamera::new(PI/3., cornell_camera_pos, -cornell_camera_pos.normalise(), Vec3::Y, 3.1, 0.02);
+    let mut cornell_camera = DOFCamera::new(PI/3., cornell_camera_pos, -cornell_camera_pos.normalise(), Vec3::Y, 3.1, 0.0);
 
     let sphere_camera_pos = Vec3::new(4., 0.6, -8.);
-    let mut sphere_camera = DOFCamera::new(PI/3., sphere_camera_pos, -sphere_camera_pos.normalise(), Vec3::Y, sphere_camera_pos.norm(), 0.05);
+    let mut sphere_camera = DOFCamera::new(PI/3., sphere_camera_pos, -sphere_camera_pos.normalise(), Vec3::Y, sphere_camera_pos.norm(), 0.1);
 
     let setting_up = now.elapsed().as_millis();
     println!("Setting up: {} milliseconds", setting_up);
 
     
-    //render_window_iter(&sphere_test_scene(), &mut sphere_camera, 1024, 512, 6); //, "test.png".to_string()
-    render_window_iter(&cornell_box_scene(), &mut cornell_camera, 512, 512, 12); //, "test.png".to_string()
+    render_window_iter(&cornell_box_scene(), &mut cornell_camera, 256, 256, 12); //, "test.png".to_string()
 
     println!("Rendering: {} seconds", (now.elapsed().as_millis() - setting_up) / 1000);
 }
@@ -221,7 +223,7 @@ const SKY_COLOUR: Colour = Colour::new(0.45, 0.68, 0.87);
 
 /// Looks a bit like the real sky or whatever
 fn _background(ray: Ray) -> Colour {
-    let sun = (dot(SUN_DIRECTION, ray.direction) + 0.03).min(1.).max(0.).powf(300.) * Colour::WHITE;
+    let sun = (dot(SUN_DIRECTION, ray.direction) + 0.03).min(1.).max(0.).powf(100.) * Colour::WHITE;
     
     let lerp = (0.5 + ray.direction.y/2.).powf(1.5);
     let sky = (1. - lerp) * SKY_COLOUR + lerp * Colour::WHITE;
@@ -410,7 +412,16 @@ fn cornell_box_scene() -> Vec<Box<dyn Object + Sync + Send>> {
         colour: Colour::WHITE,
     };
 
-    vec![Box::new(bottom), Box::new(top), Box::new(left), Box::new(right), Box::new(back), Box::new(light), Box::new(mirror_ball), Box::new(glass_cube)]
+    let glass_lens = GeneralObject::<Sphere> {
+        shape: Sphere {
+            centre: -6. * Vec3::Z,
+            radius: 3.2,
+        },
+        material: Material::Glass(0.5),
+        colour: Colour::WHITE,
+    };
+
+    vec![Box::new(glass_lens), Box::new(bottom), Box::new(top), Box::new(left), Box::new(right), Box::new(back), Box::new(light), Box::new(mirror_ball), Box::new(glass_cube)]
     //vec![Box::new(gas), Box::new(light2), Box::new(mirror_ball), Box::new(glass_ball)]
 }
 

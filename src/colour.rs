@@ -15,6 +15,13 @@ fn exp(x: Float) -> Float {
     1.- (-x * 2.).exp() //Brightnes??
 }
 
+// ACES Filmic Tone Mapping Curve from the internet
+fn filmic(x: Float) -> Float {
+    let (a, b, c, d, e) = (2.51, 0.03, 2.43, 0.59, 0.14);
+
+    ((x*(a*x+b))/(x*(c*x+d)+e)).max(0.).min(1.)
+}
+
 fn gamma_encode(linear: Float) -> Float {
     linear.powf(1./GAMMA)
 }
@@ -45,6 +52,14 @@ impl Colour {
             (gamma_encode(exp(self.z)).max(0.).min(1.) * 255.) as u8,
             0,
         )
+    }
+
+    pub fn to_u32_rgb_filmic(self) -> u32 {
+        let r = (gamma_encode(filmic(self.x)) * 255.) as u32;
+        let g = (gamma_encode(filmic(self.y)) * 255.) as u32;
+        let b = (gamma_encode(filmic(self.z)) * 255.) as u32;
+        
+        (r << 16) | (g << 8) | b
     }
 
     pub fn to_u32_rgb(self) -> u32 {
