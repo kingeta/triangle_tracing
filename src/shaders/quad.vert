@@ -1,4 +1,5 @@
-#version 450 core
+#version 430 core
+//#version 450 core
 
 layout (location = 0) in vec3 Position;
 

@@ -29,14 +29,6 @@ use std::time::Instant;
 
 
 
-
-
-
-
-
-
-
-
 fn render<O: Object, C: Camera>(scene: &O, camera: &C, width: usize, height: usize, samples: usize, depth: usize, filename: String) {
     // The final image
     let mut result: RgbImage = ImageBuffer::new(width as u32, height as u32);

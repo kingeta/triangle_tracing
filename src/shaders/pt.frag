@@ -1,6 +1,6 @@
-#version 450 core
+#version 430 core
+//#version 450 core
 
-precision lowp float;
 
 uniform isampler1D textureSampler;
 uniform ivec4 viewport;
@@ -11,12 +11,18 @@ uniform uint frame;
 
 out vec4 Colour;
 
-#define INF 3.402823466e+38
+//#define INF 3.402823466e+38
+#define INF 1.e+10
+#define CLOSE 0.001
 #define PI 3.141592653
-#define WORLD_SIZE 5
-#define SAMPLES 8
-#define MAX_BOUNCE 3
+#define WORLD_SIZE 4
+#define SAMPLES 4
+#define MAX_BOUNCE 5
 
+#define DIFFUSE 0
+#define MIRROR 1
+#define LIGHT 2
+#define GLASS 3
 
 // Jenkins hash function, specialized for a uint key
 uint hash(uint key) {
@@ -53,7 +59,7 @@ float rand(inout uint seed) {
 vec3 rand3_on_sphere(inout uint seed) {
     float t = PI * rand(seed);
     float z = rand(seed);
-    float r = sqrt((z + 1) * (1 - z));
+    float r = sqrt((z + 1.) * (1. - z));
     float x = cos(t) * r;
     float y = sin(t) * r;
     return vec3(x, y, z);
@@ -62,7 +68,7 @@ vec3 rand3_on_sphere(inout uint seed) {
 // Returns a coordinate uniformly distributed in a circle of radius 1
 vec2 rand2_in_circle(inout uint seed) {
     float t = PI * rand(seed);
-    float r = sqrt((rand(seed) + 1) / 2);
+    float r = sqrt((rand(seed) + 1.) / 2.);
     return r * vec2(cos(t), sin(t));
 }
 
@@ -71,10 +77,44 @@ vec2 rand2_on_circle(inout uint seed) {
     return vec2(cos(t), sin(t));
 }
 
-void Mat_diffuse(inout uint seed, inout vec3 col, inout vec3 dir, in vec3 normal, in vec3 diffuse) {
-    col *= diffuse;
-    dir = normalize(normal + rand3_on_sphere(seed));
+/// Cosine weighted sampling on the unit hemisphere upwards
+vec3 rand3_cos(inout uint seed) {
+    float u1 = abs(rand(seed));
+    float theta = 2. * PI * abs(rand(seed));
+
+    float r = sqrt(u1);
+
+    return vec3(r * cos(theta), r * sin(theta), sqrt(max(0., 1. - u1)));
 }
+
+/// Generate, from one vector, an orthonormal basis
+/// without too many divisions by zero etc.
+/// Taken from Duff etc paper
+mat3 onb(vec3 u) {
+    //let sign = (1_f32).copysign(u.z);
+    float sign_ = sign(u.z);
+    float a = -1. / (sign_ + u.z);
+    float b = u.x * u.y * a;
+
+    return mat3(vec3(1. + sign_ * u.x * u.x * a, sign_ * b, -sign_ * u.x), vec3(b, sign_ + u.y * u.y * a, -u.y), u);
+}
+
+/// Cosine weighted sampling on the hemisphere defined by u.
+vec3 rand3_hemisphere_cos(vec3 u, inout uint seed) {
+    //let (v, w) = onb(u);
+    //mat3 onb_ = onb(u);
+    //vec3 r = rand3_cos(seed);
+    
+    // The cosine weighted random vector has positive z component;
+    // we want the transformed ray to be in the u direction, so
+    // r.z multiplies u. I believe this result should be of norm 1
+    // (so long as ONB is)
+    //r.z * u + r.x * v + r.y * w
+    
+    //return r.z * onb_[2] + r.x * onb_[0] + r.y * onb_[1];
+    return onb(u) * rand3_cos(seed);
+}
+
 
 float length_squared(vec3 v) {
     return dot(v, v);
@@ -119,12 +159,16 @@ bool Sphere_hit(in Ray r, in const Sphere sphere, in const float t_min, in const
     //float c = dot(oc, oc) - radius * radius;
     float c = length_squared(oc) - sphere.radius * sphere.radius;
     float disc = half_b * half_b - a * c;
-    if (disc > 0.) {
+    
+    if (disc > 0.001) {
         float disc_sqrt = sqrt(disc);
         float dist = (-half_b - disc_sqrt) / a;
-        if (dist < t_min || dist > t_max) {
-            disc = (-half_b + disc_sqrt) / a;
-            if (disc < t_min || t_max > disc) {
+        //if (dist < t_min || dist > t_max) {
+        if (t_min > dist || dist > t_max) {
+            //return false;
+            dist = (-half_b + disc_sqrt) / a;
+            //if (dist < t_min || t_max < dist) {
+            if (t_min > dist || dist > t_max) {
                 return false;
             }
         }
@@ -134,16 +178,48 @@ bool Sphere_hit(in Ray r, in const Sphere sphere, in const float t_min, in const
         hit.dist = dist;
         hit.p = p;
         hit.normal = normalize(p - sphere.centre);
+        //hit.normal *= -sign(dot(hit.normal, r.d));
 
         return true;
-        //return (-half_b - sqrt(disc)) / a;
+
     } else {
-        //return -1.;
         return false;
     }
 }
 
-Sphere scene[] = Sphere[](
+
+const Sphere scene[] = Sphere[](
+    Sphere( // Left
+        vec3(-2., 0., 0.), 1.,
+        Mat(
+            vec3(1.),
+            GLASS
+        )
+    ),
+    Sphere( // Middle
+        vec3(0.), 1.,
+        Mat(
+            0.9 * vec3(1., 1., 0.),
+            DIFFUSE
+        )
+    ),
+    Sphere( // Right
+        vec3(2., -0.2, 0.), 0.8,
+        Mat(
+            0.95 * vec3(0.8, 0.4, 0.4),
+            MIRROR
+        )
+    ),
+    Sphere( // Floor
+        vec3(0., -1e+3-1., 0.), 1e+3,
+        Mat(
+            0.9 * vec3(0.3, 0.25, 0.25),
+            DIFFUSE
+        )
+    )
+);
+
+const Sphere scene2[] = Sphere[](
     Sphere(
         vec3(0., -10000.5, -1.), 10000.,
         Mat(
@@ -151,13 +227,13 @@ Sphere scene[] = Sphere[](
             0
         )
     ),
-    Sphere(
+    /*Sphere(
         vec3(0., 0., -10010.), 10000.,
         Mat(
             vec3(0.2, 0., 0.2),
             0
         )
-    ),
+    ),*/
     Sphere(
         vec3(1., 0., -1.), 0.5,
         Mat(
@@ -199,32 +275,111 @@ bool World_hit(in Ray r, in const Sphere[WORLD_SIZE] world, in const float t_min
 }
 
 
+const vec3 SUN_DIRECTION = vec3(0.577350, 0.577350, 0.577350);
+const vec3 SKY_COLOUR = vec3(0.45, 0.68, 0.87);
+
+
+/// Schlick approximation or something
+float schlick(float cos_, float n_dielectric) {
+    float r0 = pow((1.-n_dielectric)/(1.+n_dielectric), 2.);
+    //return r0 + (1. - r0) * (1. - cos).powf(5.)
+    return r0 + (1. - r0) * pow(1. - cos_, 5.);
+}
+
+
 
 bool trace(inout uint seed, inout Ray r, inout vec3 col) {
     Hit_Record hit_record;
     int hit_which;
 
-    if ( World_hit(r, scene, 0.001, INF, hit_record, hit_which) ) {
+    if ( World_hit(r, scene, CLOSE, INF, hit_record, hit_which) ) {
         //r.o = hit_record.p + EPS * hit_record.normal;
         r.o = hit_record.p;
-
+        //col = hit_record.normal;
+        //return true;
+        
         switch ( scene[hit_which].mat.type ) {
             case 0: // diffuse
-                r.d = normalize(hit_record.normal + rand3_on_sphere(seed));
-                col *= scene[hit_which].mat.colour * max(0., dot(r.d, hit_record.normal));
+                //r.d = normalize(hit_record.normal + rand3_on_sphere(seed));
+                r.d = rand3_hemisphere_cos(hit_record.normal, seed);
+                //col *= scene[hit_which].mat.colour * max(0., dot(r.d, hit_record.normal));
+                col *= scene[hit_which].mat.colour;
                 return false;
             case 1: // mirror
                 r.d = reflect(r.d, hit_record.normal);
-                col *= scene[hit_which].mat.colour * max(0., dot(r.d, hit_record.normal));
+                // col *= scene[hit_which].mat.colour * max(0., dot(r.d, hit_record.normal)); // with cos
+                col *= scene[hit_which].mat.colour; // without cos
                 return false;
             case 2: // light
                 col *= scene[hit_which].mat.colour;
                 return true;
+            case 3: // glass with n = 1.54
+                const float refr = 1.54;
+                /*float cos_ = dot(r.d, hit_record.normal);
+                float ratio;
+                bool refracted;
+                
+                if ( cos_ < 0. ) {
+                    ratio = 1./1.54;
+                } else {
+                    ratio = 1.54;
+                }
+                
+                vec3 refract_direction = refract_(r.d, -sign(cos_) * hit_record.normal, ratio, refracted);
+                
+                if ( refracted ) {
+                        float schlick_factor = schlick(abs(cos_), 1.54);
+
+                        vec3 reflect_direction = reflect(r.d, -sign(cos_) * hit_record.normal);
+
+                        if ( rand(seed) < schlick_factor ) { //dot(reflect_direction, normal).abs() * 
+                            //trace(scene,
+                            //    Ray::new(point + EPS * -cos.signum() * normal, reflect_direction), depth - 1)
+                            r.d = reflect_direction;
+                        } else {
+                            r.d = refract_direction;
+                            //trace(scene,
+                            //    Ray::new(point + EPS * cos.signum() * normal, refract_direction), depth - 1)    
+                        }
+                } else {
+                    r.d = reflect(r.d, hit_record.normal);
+                }
+                */
+                
+                float cos_ = dot(hit_record.normal, r.d);
+                vec3 norm = -hit_record.normal * sign(cos_);
+                
+                float ratio;
+                if (cos_ < 0.) {
+                    ratio = 1./refr;
+                } else {
+                    ratio = refr;
+                }
+                
+                float discriminant = 1. - ratio*ratio * (1.- cos_*cos_);
+                
+                //r.d = refract(r.d, -sign(dot(hit_record.normal, r.d)) * hit_record.normal, 1.54);
+                if ( discriminant > 0. && (abs(rand(seed)) > schlick(abs(cos_), refr)) ) {
+                    r.d = refract(r.d, norm, ratio);
+                } else {
+                    r.d = reflect(r.d, norm);
+                }
+                
+                col *= scene[hit_which].mat.colour;
+                return false;
+
         }
     } else {
         // No hit
-        float t = 0.5 * (clamp(r.d.y, -1., 1.) + 1.);
-        col *= t * vec3(.5, .7, 1.) + (1. - t) * vec3(1.) + vec3(.2) * max(0., dot(vec3(1., 0., 1.), r.d));
+        //float t = 0.5 * (clamp(r.d.y, -1., 1.) + 1.);
+        //col *= t * vec3(.5, .7, 1.) + (1. - t) * vec3(1.) + vec3(.2) * max(0., dot(vec3(1., 0., 1.), r.d));
+        
+        vec3 sun = vec3(pow(clamp(dot(SUN_DIRECTION, r.d) + 0.03, 0., 1.), 100.));
+        float lerp = pow(0.5 + r.d.y/2., 1.5);
+        vec3 sky = (1. - lerp) * SKY_COLOUR + vec3(lerp);
+        
+        col *= sun + 0.4 * sky;
+        
         return true;
     }
 }
@@ -241,72 +396,44 @@ vec3 bounce(inout uint seed, in Ray r) {
     return vec3(0.);
 }
 
-
-/* vec3 trace(Ray r, in const Sphere[WORLD_SIZE] world, in const float t_min, in const float t_max) {
-    Hit_Record hit;
-    int which;
-    vec3 direction;
-
-    /*vec3 col = vec3(1.);
-    for ( int k; k < MAX_BOUNCE; k++ ) {
-
-        if ( World_hit(r, world, 0., INF, hit) ) {
-            //col += clamp(0.5 * (vec3(1.) + hit.normal), 0., 1.);
-            //direction = normalize(hit.normal + rand_sphere());
-            direction = hit.normal;
-            col *= dot(direction, hit.normal);
-            r.o = hit.p;
-            r.d = direction;
-        } else {
-            float t = 0.5 * (clamp(r.d.y, -1., 1.) + 1.);
-            col *= t * vec3(.5, .7, 1.) + (1. - t) * vec3(1.);
-            return col + .2 * dot(vec3(1., 0., 1.), r.d);
-        }
-
-    }*/
-/*
-    vec3 col = vec3(0.);
-    if ( World_hit(r, world, 0., INF, hit, which) ) {
-        col = world[which].colour * max(0., dot(vec3(-1., 1., 1.), hit.normal));
-        return col;
-    } else {
-        float t = 0.5 * (clamp(r.d.y, -1., 1.) + 1.);
-        col = t * vec3(.5, .7, 1.) + (1. - t) * vec3(1.);
-        return col + .2 * max(0., dot(vec3(1., 0., 1.), r.d));
-    }
-    
-    return vec3(0.);
-} */
-
 void main() {
     // Initial
     vec3 final_col = vec3(0.);
     ivec2 dimensions = viewport.zw;
-    // Divided by height i.e uv.x \in [-r, r], uv.y \in [-1, 1], r = width/height (generally > 1)
+    // (Divided by height i.e uv.x \in [-r, r], uv.y \in [-1, 1], r = width/height (generally > 1))
 
-    uint frame_seed = hash(frame);
-    uint seed = hash(frame_seed ^ hash(uint(gl_FragCoord.x)*uint(dimensions.y) + uint(gl_FragCoord.y)));
-
+    //uint frame_seed = hash(frame);
+    //uint seed = hash(frame_seed ^ hash(uint(gl_FragCoord.x)*uint(dimensions.y) + uint(gl_FragCoord.y)));
+    uint frame_seed;
+    uint seed;
 
     // Setting up scene variables
     float focal_length = 1.;
 
-    vec2 uv = (2 * gl_FragCoord.xy - dimensions.xy) / dimensions.y;
-
+    //vec2 uv = (2 * gl_FragCoord.xy - dimensions.xy) / dimensions.y;
+    vec2 uv;
+    
     vec3 canvas_side = normalize(cross(up, forward));
     vec3 canvas_up = cross(forward, canvas_side);
-    vec3 dir = vec3(uv, focal_length);
+    //vec3 dir = vec3(uv, focal_length);
+    vec3 dir;
+    
 
     
     for ( uint j = 0; j < SAMPLES; j++ ) {
 
-        uint frame_seed = hash(SAMPLES * frame + j);
-        uint seed = hash(frame_seed ^ hash(uint(gl_FragCoord.x)*uint(dimensions.y) + uint(gl_FragCoord.y)));
+        frame_seed = hash(SAMPLES * frame + j);
+        seed = hash(frame_seed ^ hash(uint(gl_FragCoord.x)*uint(dimensions.y) + uint(gl_FragCoord.y)));
 
+        float angle = abs(rand(seed)) * 2. * PI;
+        vec3 random_position = .1 * sqrt(abs(rand(seed))) * (sin(angle) * canvas_side + cos(angle) * canvas_up) * 0.;
+
+        //vec3 random_origin = random_position + origin;
+        
         uv = (2 * gl_FragCoord.xy - dimensions.xy + vec2(rand(seed), rand(seed))) / dimensions.y;
         dir = vec3(uv, focal_length);
 
-        Ray r = Ray(origin, normalize(-dir.x * canvas_side + dir.y * canvas_up + dir.z * forward));
+        Ray r = Ray(origin + random_position, normalize(-random_position/4. -dir.x * canvas_side + dir.y * canvas_up + dir.z * forward));
         final_col += bounce(seed, r);
     }
 
@@ -314,7 +441,8 @@ void main() {
 
     //Colour = vec4(pow(final_col / float(SAMPLES), vec3(1./2.2)), 1.);
     final_col /= float(SAMPLES);
-    final_col = vec3(1.) - exp(-final_col);
+    final_col = vec3(1.) - exp(2. * -final_col);
+    
     Colour = vec4(pow(final_col, vec3(1./2.2)), 1.);
-    //Colour = vec4(vec3(float(texelFetch(textureSampler, 1, 0)))/255., 1.);
+    //Colour = vec4(final_col, 1.);
 }

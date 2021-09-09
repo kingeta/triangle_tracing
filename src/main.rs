@@ -21,7 +21,7 @@ fn main() {
     let gl_attr = video_subsystem.gl_attr();
 
     gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
-    gl_attr.set_context_version(4, 5);
+    gl_attr.set_context_version(4, 3); //4, 5
     
     let window = video_subsystem.window("Test", window_w as u32, window_h as u32)
         .opengl()
@@ -34,7 +34,7 @@ fn main() {
 
     // Bind and create shaders
     let vert_shader = render_gl::Shader::from_vert_source(
-        &CString::new(include_str!("shaders/test.vert")).unwrap()
+        &CString::new(include_str!("shaders/quad.vert")).unwrap()
     ).unwrap();
 
     let frag_shader = render_gl::Shader::from_frag_source(
@@ -152,7 +152,7 @@ fn main() {
     let mut horizontal_angle: f32 = 0.;
     let mut vertical_angle: f32 = 0.;
     
-    let mut up: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::unit_y();
+    let up: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::unit_y();
     let up_uniform = render_gl::Uniform::new("up", shader_program.id()).unwrap();
 
 
@@ -176,7 +176,8 @@ fn main() {
         );
     }
 
-    let mut keys: HashSet<Keycode> = HashSet::new();
+    let keys_list = vec![Keycode::W, Keycode::A, Keycode::S, Keycode::D, Keycode::Space, Keycode::C];
+    let mut keys_down: HashSet<Keycode> = HashSet::new();
     let mut focus = false;
     //keys.insert(Keycode::W);
 
@@ -186,30 +187,36 @@ fn main() {
     'main: loop {
 
         loop {for event in event_pump.poll_iter() {
-            //println!("{:?}", event);
             match event {
 
-                Event::KeyDown {keycode: Some(Keycode::Escape), .. } | Event::Quit { .. } => {
+                Event::KeyDown { keycode: Some(Keycode::Escape), .. } | Event::KeyDown { keycode: Some(Keycode::Q), .. } | Event::Quit { .. } => {
                     break 'main;
                 }
 
                 Event::KeyDown { keycode: Some(x), repeat: false, .. } => {
-                    keys.insert(x);
+                    if keys_list.contains(&x) { keys_down.insert(x); };
                 }
 
                 Event::KeyUp { keycode: Some(y), repeat: false, .. } => {
-                    keys.remove(&y);
+                    if keys_list.contains(&y) { keys_down.remove(&y); }; 
                 }
 
-                Event::MouseButtonUp {
-                    mouse_btn: sdl2::mouse::MouseButton::Left, ..
-                } => {
-                    focus = !focus;
-                    sld_context.mouse().set_relative_mouse_mode(focus);
+                Event::MouseButtonUp { mouse_btn: sdl2::mouse::MouseButton::Left, .. } => {
+		    focus = !focus;
+		    sld_context.mouse().set_relative_mouse_mode(focus);
+                }
+                
+                Event::MouseMotion { xrel: x, yrel: y, .. } => {
+                	if focus {
+        	                horizontal_angle += x as f32 / window_w as f32 * 6.;
+				vertical_angle += y as f32 / window_w as f32 * 6.;
+				vertical_angle = vertical_angle.max(-3.141/2.).min(3.141/2.);
+				//println!("{}", state.y());	
+                	}
+                	//println!("{}, {}", x, y);
                 }
 
                 Event::Window { win_event, .. } => {
-                    //println!("{:?}", win_event);
                     if let sdl2::event::WindowEvent::Resized(new_w, new_h) = win_event {
                         window_w = new_w;
                         window_h = new_h;
@@ -253,29 +260,31 @@ fn main() {
             // Time stuff
 
 
-            if keys.contains(&Keycode::W) {
+            if keys_down.contains(&Keycode::W) {
                 position += speed * direction * frame_time as f32;
-            } else if keys.contains(&Keycode::S) {
+            } else if keys_down.contains(&Keycode::S) {
                 position -= speed * direction * frame_time as f32;
             }
-            if keys.contains(&Keycode::Space) {
+            
+            if keys_down.contains(&Keycode::Space) {
                 position += speed * canvas_up * frame_time as f32;
-            } else if keys.contains(&Keycode::C) {
+            } else if keys_down.contains(&Keycode::C) {
                 position -= speed * canvas_up * frame_time as f32;
             }
-            if keys.contains(&Keycode::A) {
+            
+            if keys_down.contains(&Keycode::A) {
                 position += speed * canvas_side * frame_time as f32;
-            } else if keys.contains(&Keycode::D) {
+            } else if keys_down.contains(&Keycode::D) {
                 position -= speed * canvas_side * frame_time as f32;
             }
 
-            if focus {
+            /*if focus {
                 let state = event_pump.relative_mouse_state();
                 horizontal_angle += state.x() as f32 / window_w as f32 * 6.;
                 vertical_angle += state.y() as f32 / window_w as f32 * 6.;
                 vertical_angle = vertical_angle.max(-3.141/2.).min(3.141/2.);
                 //println!("{}", state.y());
-            }
+            }*/
 
             
             time += frame_time;
