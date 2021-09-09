@@ -74,7 +74,7 @@ pub struct Shader {
 impl Shader {
     pub fn from_source(source: &CStr, kind: gl::types::GLenum) -> Result<Shader, String> {
         let id = shader_from_source(source, kind)?;
-        Ok(Shader { id })
+        Ok(Shader { id } )
     }
 
     pub fn from_vert_source(source: &CStr) -> Result<Shader, String> {
@@ -98,6 +98,42 @@ impl Drop for Shader {
     }
 }
 
+pub struct Uniform {
+    shader_id: gl::types::GLuint,
+    handle: gl::types::GLint,
+}
+
+impl Uniform {
+    pub fn new(name: &str, shader_id: gl::types::GLuint) -> Result<Uniform, String> {
+        let processed_name = &CString::new(name).unwrap();
+        let handle: gl::types::GLint;
+
+        unsafe {
+            handle = gl::GetUniformLocation(
+                shader_id,
+                processed_name.as_ptr() as *const gl::types::GLchar
+            );
+        }
+
+        Ok(Uniform { shader_id, handle })
+    }
+
+    pub fn push_3f(&self, v: cgmath::Vector3<f32>) {
+        unsafe {
+            gl::ProgramUniform3f(
+                self.shader_id,
+                self.handle,
+                v.x,
+                v.y,
+                v.z
+            )
+        }
+    }
+
+    pub fn handle(self) -> gl::types::GLint {
+        self.handle
+    }
+}
 
 fn shader_from_source(source: &CStr, kind: gl::types::GLuint) -> Result<gl::types::GLuint, String> {
     let id = unsafe { gl::CreateShader(kind) };

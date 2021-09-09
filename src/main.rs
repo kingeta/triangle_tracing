@@ -1,20 +1,23 @@
-#![allow(dead_code, unused_imports, unused_variables, unused_mut)]
+//#![allow(dead_code, unused_imports, unused_variables, unused_mut)]
 use std::ffi::CString;
+use std::collections::HashSet;
 
 extern crate sdl2;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::keyboard::Scancode;
+use cgmath::prelude::*;
 //extern crate gl;
 //use gl;
 
 pub mod render_gl;
 
 fn main() {
-    let (window_w, window_h) = (800i32, 600i32);
+    // Starting SDL
+    let (mut window_w, mut window_h) = (1200i32, 650i32);
     let sld_context = sdl2::init().unwrap();
     let video_subsystem = sld_context.video().unwrap();
 
+    // OpenGL stuff
     let gl_attr = video_subsystem.gl_attr();
 
     gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
@@ -22,27 +25,27 @@ fn main() {
     
     let window = video_subsystem.window("Test", window_w as u32, window_h as u32)
         .opengl()
-        //.resizable()
+        .resizable()
         .build()
         .unwrap();
 
     let _gl_context = window.gl_create_context().unwrap();
     let _gl = gl::load_with(|s| video_subsystem.gl_get_proc_address(s) as *const std::os::raw::c_void);
 
-
+    // Bind and create shaders
     let vert_shader = render_gl::Shader::from_vert_source(
         &CString::new(include_str!("shaders/test.vert")).unwrap()
     ).unwrap();
 
     let frag_shader = render_gl::Shader::from_frag_source(
-        &CString::new(include_str!("shaders/rt.frag")).unwrap()
+        &CString::new(include_str!("shaders/pt.frag")).unwrap()
     ).unwrap();
 
     let shader_program = render_gl::Program::from_shaders(
         &[vert_shader, frag_shader]
     ).unwrap();
 
-
+    // Setup the background quad
     let quad: Vec<f32> = vec![
         -1.0,  1.0,  0.0,
         -1.0, -1.0,  0.0,
@@ -90,14 +93,37 @@ fn main() {
         gl::BindVertexArray(0);
     }
 
+    /*let mut tex_rand: gl::types::GLuint = 0;
+    unsafe {
+        gl::GenTextures(1, &mut tex_rand);
+        gl::BindTexture(gl::TEXTURE_1D, tex_rand);
+        gl::TexStorage1D(gl::TEXTURE_1D, 1, gl::RGB8, 100);
+        gl::TexSubImage1D()
+    }*/
+
+    let mut tex_id: gl::types::GLuint = 0;
+    unsafe {
+        gl::ActiveTexture(gl::TEXTURE0);
+        gl::GenTextures(1, &mut tex_id);
+        gl::BindTexture(gl::TEXTURE_1D, tex_id);
+        gl::TexStorage1D(gl::TEXTURE_1D, 1, gl::RGB8, 4);
+        gl::TexSubImage1D(gl::TEXTURE_1D, 0, 0, 4, gl::R32I, gl::UNSIGNED_BYTE, vec![4 as i32, 12 as i32, 200 as i32, 150 as i32].as_ptr() as *const std::ffi::c_void);
+
+        gl::TexParameteri(gl::TEXTURE_1D, gl::TEXTURE_MIN_FILTER, 0);
+        gl::BindTexture(gl::TEXTURE_1D, tex_id);
+    }
+
+    // Setup some random opengl stuff
     unsafe {
         gl::Viewport(0, 0, window_w, window_h);
         gl::ClearColor(0.0, 1.0, 0.0, 1.0);
     }
 
-    let viewport_name = &CString::new("viewport").unwrap();
+    // Uniforms
+    let viewport_handle: gl::types::GLint;
     unsafe {
-        let viewport_handle: gl::types::GLint = gl::GetUniformLocation(
+        let viewport_name = &CString::new("viewport").unwrap();
+        viewport_handle = gl::GetUniformLocation(
             shader_program.id(),
             viewport_name.as_ptr() as *const gl::types::GLchar
         );
@@ -113,201 +139,171 @@ fn main() {
     }
 
 
-    let mut eye: Vec<f32> = vec![0., 0., -8.];
-    let eye_name = &CString::new("eye").unwrap();
-    let eye_handle: gl::types::GLint;
+    //let mut position: Vec<f32> = vec![0., 0., 0.];
+    let mut position: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::unit_z();
+    let position_uniform = render_gl::Uniform::new("origin", shader_program.id()).unwrap();
+
+    //let (mut mouse_x, mut mouse_y): (i32, i32) = (0, 0);
+    //let (mut mouse_x_old, mut mouse_y_old): (i32, i32);
+    //let (mut theta, mut phi): (f32, f32) = (0., 0.);
+    
+    let mut direction: cgmath::Vector3<f32>; // = -cgmath::Vector3::<f32>::unit_z();
+    let direction_uniform = render_gl::Uniform::new("forward", shader_program.id()).unwrap();
+    let mut horizontal_angle: f32 = 0.;
+    let mut vertical_angle: f32 = 0.;
+    
+    let mut up: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::unit_y();
+    let up_uniform = render_gl::Uniform::new("up", shader_program.id()).unwrap();
+
+
+    let mut canvas_side;
+    let mut canvas_up;
+
+    let speed = 0.005; // in units per millisecond
+    //let mouse_speed = 0.005 / (2. * 3.141); // in radians per pixel
+    let mut time: usize = 0;
+    let mut new_time: usize;
+    let mut current_time: usize = 0;
+    let mut frame_time: usize;
+
+    //let mut frame = 0;
+    let frame_handle: gl::types::GLint;
     unsafe {
-        eye_handle = gl::GetUniformLocation(
+        let frame_name = &CString::new("frame").unwrap();
+        frame_handle = gl::GetUniformLocation(
             shader_program.id(),
-            eye_name.as_ptr() as *const gl::types::GLchar
+            frame_name.as_ptr() as *const gl::types::GLchar
         );
     }
 
+    let mut keys: HashSet<Keycode> = HashSet::new();
+    let mut focus = false;
+    //keys.insert(Keycode::W);
 
-    let (mut mouse_x, mut mouse_y): (i32, i32) = (0, 0);
-    let (mut mouse_x_old, mut mouse_y_old): (i32, i32);
-    let (mut theta, mut phi): (f32, f32) = (0., 0.);
-    let direction_name = &CString::new("direction").unwrap();
-    let direction_handle: gl::types::GLint;
-    unsafe {
-        direction_handle = gl::GetUniformLocation(
-            shader_program.id(),
-            direction_name.as_ptr() as *const gl::types::GLchar
-        );
-    }
-
-    let angle_name = &CString::new("angle").unwrap();
-    let angle_handle: gl::types::GLint;
-    unsafe {
-        angle_handle = gl::GetUniformLocation(
-            shader_program.id(),
-            angle_name.as_ptr() as *const gl::types::GLchar
-        );
-    }
-
-    let mut eye_vel: Vec<f32> = vec![0., 0., 0.];
-    let mut down: Vec<bool> = vec![false, false, false, false, false, false, false, false, false, false, false, false];
-    let mut angle = 0.;
-
-    let speed = 0.01;
+    //sld_context.mouse().set_relative_mouse_mode(true);
 
     let mut event_pump = sld_context.event_pump().unwrap();
     'main: loop {
 
-        loop { for event in event_pump.poll_iter() {
+        loop {for event in event_pump.poll_iter() {
+            //println!("{:?}", event);
             match event {
-                Event::KeyDown { keycode: Some(Keycode::W), repeat: false, .. } => {down[2] = true;break},
-                Event::KeyDown { keycode: Some(Keycode::S), repeat: false, .. } => {down[3] = true;break},
-                Event::KeyDown { keycode: Some(Keycode::A), repeat: false, .. } => {down[1] = true;break},
-                Event::KeyDown { keycode: Some(Keycode::D), repeat: false, .. } => {down[0] = true;break},
-                Event::KeyDown { keycode: Some(Keycode::Q), repeat: false, .. } => {down[6] = true;break},
-                Event::KeyDown { keycode: Some(Keycode::E), repeat: false, .. } => {down[7] = true;break},
-                Event::KeyDown { keycode: Some(Keycode::Left), repeat: false, .. } => {down[8] = true;break},
-                Event::KeyDown { keycode: Some(Keycode::Right), repeat: false, .. } => {down[9] = true;break},
-                Event::KeyDown { keycode: Some(Keycode::Up), repeat: false, .. } => {down[10] = true;break},
-                Event::KeyDown { keycode: Some(Keycode::Down), repeat: false, .. } => {down[11] = true;break},
-                /*Event::KeyDown { keycode: Some(Keycode::Space), repeat: false, .. } => {down[4] = true},
-                Event::KeyDown { keycode: Some(Keycode::X), repeat: false, .. } => {down[5] = true},
-                */
-
-                Event::KeyUp { keycode: Some(Keycode::W), repeat: false, .. } => {down[2] = false;break},
-                Event::KeyUp { keycode: Some(Keycode::S), repeat: false, .. } => {down[3] = false;break},
-                Event::KeyUp { keycode: Some(Keycode::A), repeat: false, .. } => {down[1] = false;break},
-                Event::KeyUp { keycode: Some(Keycode::D), repeat: false, .. } => {down[0] = false;break},
-                Event::KeyUp { keycode: Some(Keycode::Q), repeat: false, .. } => {down[6] = false;break},
-                Event::KeyUp { keycode: Some(Keycode::E), repeat: false, .. } => {down[7] = false;break},
-                Event::KeyUp { keycode: Some(Keycode::Left), repeat: false, .. } => {down[8] = false;break},
-                Event::KeyUp { keycode: Some(Keycode::Right), repeat: false, .. } => {down[9] = false;break},
-                Event::KeyUp { keycode: Some(Keycode::Up), repeat: false, .. } => {down[10] = false;break},
-                Event::KeyUp { keycode: Some(Keycode::Down), repeat: false, .. } => {down[11] = false;break},
-                /*Event::KeyUp { keycode: Some(Keycode::Space), repeat: false, .. } => {down[4] = false},
-                Event::KeyUp { keycode: Some(Keycode::X), repeat: false, .. } => {down[5] = false},
-                */
-
-                Event::MouseMotion {
-                    x, y, .. //mouse_btn: sdl2::mouse::MouseButton::Left, 
-                } => {
-                    //mouse_x = 2. * (x as f32 / window_w as f32 - 0.5);
-                    //mouse_y = 2. * (y as f32 / window_h as f32 - 0.5);
-                    //mouse_x = (2*x - window_w) as f32 / window_h as f32;
-                    //mouse_y = (2*y - window_h) as f32 / window_h as f32;
-                    /*mouse_x_old = mouse_x;
-                    mouse_y_old = mouse_y;
-                    mouse_x = x;
-                    mouse_y = y;*/
-                }
-
-                Event::MouseButtonDown {
-                    mouse_btn: sdl2::mouse::MouseButton::Left,
-                    ..
-                } => {
-                    down[4] = true;
-                    break;
-                }
-
-                Event::MouseButtonUp {
-                    mouse_btn: sdl2::mouse::MouseButton::Left,
-                    ..
-                } => {
-                    down[4] = false;
-                    break;
-                }
-
-                Event::MouseButtonDown {
-                    mouse_btn: sdl2::mouse::MouseButton::Right,
-                    ..
-                } => {
-                    down[5] = true;
-                    break;
-                }
-
-                Event::MouseButtonUp {
-                    mouse_btn: sdl2::mouse::MouseButton::Right,
-                    ..
-                } => {
-                    down[5] = false;
-                    break;
-                }
 
                 Event::KeyDown {keycode: Some(Keycode::Escape), .. } | Event::Quit { .. } => {
                     break 'main;
                 }
 
-                /*Event::Quit {..} => break 'main,*/
-                _ => {},
-            }
-            break;
-            }
+                Event::KeyDown { keycode: Some(x), repeat: false, .. } => {
+                    keys.insert(x);
+                }
 
-            //mouse_x_old = mouse_x;
-            //mouse_y_old = mouse_y;
-            //mouse_x = event_pump.mouse_state().x();
-            //mouse_y = event_pump.mouse_state().y();
+                Event::KeyUp { keycode: Some(y), repeat: false, .. } => {
+                    keys.remove(&y);
+                }
 
+                Event::MouseButtonUp {
+                    mouse_btn: sdl2::mouse::MouseButton::Left, ..
+                } => {
+                    focus = !focus;
+                    sld_context.mouse().set_relative_mouse_mode(focus);
+                }
+
+                Event::Window { win_event, .. } => {
+                    //println!("{:?}", win_event);
+                    if let sdl2::event::WindowEvent::Resized(new_w, new_h) = win_event {
+                        window_w = new_w;
+                        window_h = new_h;
+                        unsafe {
+                            gl::Viewport(0, 0, window_w, window_h);
+                            
+                            gl::ProgramUniform4i(
+                                shader_program.id(),
+                                viewport_handle,
+                                0,
+                                0,
+                                window_w,
+                                window_h
+                            );
+                        }
+                    }
+                }
+
+                _ => {break},
+            }}
+            
             unsafe {
                 gl::Clear(gl::COLOR_BUFFER_BIT);
             }
 
             shader_program.set_used();
             
-            for i in 0..3 {
-                if down[2*i] && !down[2*i + 1] {
-                    eye[i] += speed;
-                } else if !down[2*i] && down[2*i + 1] {
-                    eye[i] -= speed;
-                }
+            //println!("{}, {}", canvas_side.magnitude(), canvas_up.magnitude());
+
+            direction = cgmath::vec3(horizontal_angle.sin(), -vertical_angle.sin(), -horizontal_angle.cos() * vertical_angle.cos());
+            canvas_side = up.cross(direction).normalize(); //norm cross up direction
+            canvas_up = direction.cross(canvas_side);
+            //println!("{:?}, {:?}, {:?}, {:?}, {:?}", horizontal_angle, vertical_angle, direction, canvas_up, canvas_side);
+           
+            //println!("Side: {:?}, up: {:?}, direction: {:?}", canvas_side.magnitude(), canvas_up.magnitude(), direction.magnitude());
+
+            new_time = sld_context.timer().unwrap().ticks() as usize;
+            frame_time = new_time - current_time;
+            current_time = new_time;
+            //println!("{}", frame_time);
+            // Time stuff
+
+
+            if keys.contains(&Keycode::W) {
+                position += speed * direction * frame_time as f32;
+            } else if keys.contains(&Keycode::S) {
+                position -= speed * direction * frame_time as f32;
+            }
+            if keys.contains(&Keycode::Space) {
+                position += speed * canvas_up * frame_time as f32;
+            } else if keys.contains(&Keycode::C) {
+                position -= speed * canvas_up * frame_time as f32;
+            }
+            if keys.contains(&Keycode::A) {
+                position += speed * canvas_side * frame_time as f32;
+            } else if keys.contains(&Keycode::D) {
+                position -= speed * canvas_side * frame_time as f32;
             }
 
-            if down[6] {
-                angle -= speed / (2. * 3.14);
-            } else if down[7] {
-                angle += speed / (2. * 3.14);
+            if focus {
+                let state = event_pump.relative_mouse_state();
+                horizontal_angle += state.x() as f32 / window_w as f32 * 6.;
+                vertical_angle += state.y() as f32 / window_w as f32 * 6.;
+                vertical_angle = vertical_angle.max(-3.141/2.).min(3.141/2.);
+                //println!("{}", state.y());
             }
 
-            //theta += (mouse_x_old - mouse_x) as f32 / window_h as f32;
-            //phi += (mouse_y_old - mouse_y) as f32 / window_h as f32;
-            //theta += ((mouse_x) as f32 / window_w as f32 - 0.5) * 2.;
-            //phi += ((mouse_y) as f32 / window_h as f32 - 0.5) * 2.;
-
-            if down[8] {
-                theta -= speed / (2. * 3.14);
-            } else if down[9] {
-                theta += speed / (2. * 3.14);
-            }
             
-            if down[10] {
-                phi += speed / (2. * 3.14);
-            } else if down[11] {
-                phi -= speed / (2. * 3.14);
-            }
+            time += frame_time;
+
+            //println!("{}", 1000/frame_time);
+
+            position_uniform.push_3f(position);
+            direction_uniform.push_3f(direction);
+            up_uniform.push_3f(up);
             
-            //println!("{}, {}", theta, phi);
-
-            unsafe {
-                gl::ProgramUniform3f(
+            /*unsafe {
+                let test_name = CString::new("textureSampler").unwrap();
+                let test = gl::GetUniformLocation(
                     shader_program.id(),
-                    eye_handle,
-                    eye[0],
-                    eye[1],
-                    eye[2]
-                );        
-            }
+                    test_name.as_ptr() as *const gl::types::GLchar
+                );
 
-            unsafe {
-                gl::ProgramUniform3f(
-                    shader_program.id(),
-                    direction_handle,
-                    theta.sin(),
-                    phi.sin(),
-                    theta.cos() * phi.cos()
+                gl::Uniform1i(
+                    test,
+                    0
                 )
-            }
+            }*/
 
             unsafe {
-                gl::ProgramUniform1f(
+                gl::ProgramUniform1ui(
                     shader_program.id(),
-                    angle_handle,
-                    angle
+                    frame_handle,
+                    time as u32
                 )
             }
 
@@ -321,8 +317,6 @@ fn main() {
             }
             
             window.gl_swap_window();
-
-            //::std::thread::sleep(std::time::Duration::new(0, 1_000_000_000u32 / 60));
         }
     }
 }

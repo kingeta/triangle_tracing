@@ -13,9 +13,9 @@ out vec4 Colour;
 
 #define INF 3.402823466e+38
 #define PI 3.141592653
-#define WORLD_SIZE 4
+#define WORLD_SIZE 5
 #define SAMPLES 8
-#define MAX_BOUNCE 4
+#define MAX_BOUNCE 3
 
 
 // Jenkins hash function, specialized for a uint key
@@ -69,6 +69,11 @@ vec2 rand2_in_circle(inout uint seed) {
 vec2 rand2_on_circle(inout uint seed) {
     float t = PI * rand(seed);
     return vec2(cos(t), sin(t));
+}
+
+void Mat_diffuse(inout uint seed, inout vec3 col, inout vec3 dir, in vec3 normal, in vec3 diffuse) {
+    col *= diffuse;
+    dir = normalize(normal + rand3_on_sphere(seed));
 }
 
 float length_squared(vec3 v) {
@@ -140,7 +145,14 @@ bool Sphere_hit(in Ray r, in const Sphere sphere, in const float t_min, in const
 
 Sphere scene[] = Sphere[](
     Sphere(
-        vec3(0., -1000.5, -1.), 1000.,
+        vec3(0., -10000.5, -1.), 10000.,
+        Mat(
+            vec3(0.2, 0., 0.2),
+            0
+        )
+    ),
+    Sphere(
+        vec3(0., 0., -10010.), 10000.,
         Mat(
             vec3(0.2, 0., 0.2),
             0
@@ -161,15 +173,13 @@ Sphere scene[] = Sphere[](
         )
     ),
     Sphere(
-        vec3(-1., 0., -1.), 0.5,
+        vec3(-1., 1., -1.), 0.5,
         Mat(
             10. * vec3(0.1, 0.1, 0.8),
             2
         )
     )
 );
-
-const vec3 to_light = normalize(vec3(-1., 1., 1.));
 
 bool World_hit(in Ray r, in const Sphere[WORLD_SIZE] world, in const float t_min, in const float t_max, out Hit_Record hit_record, out int hit_which) {
     bool hit_happened = false;
@@ -188,10 +198,11 @@ bool World_hit(in Ray r, in const Sphere[WORLD_SIZE] world, in const float t_min
     return hit_happened;
 }
 
+
+
 bool trace(inout uint seed, inout Ray r, inout vec3 col) {
     Hit_Record hit_record;
     int hit_which;
-    float t;
 
     if ( World_hit(r, scene, 0.001, INF, hit_record, hit_which) ) {
         //r.o = hit_record.p + EPS * hit_record.normal;
@@ -199,21 +210,9 @@ bool trace(inout uint seed, inout Ray r, inout vec3 col) {
 
         switch ( scene[hit_which].mat.type ) {
             case 0: // diffuse
-                /*r.d = normalize(hit_record.normal + rand3_on_sphere(seed));
+                r.d = normalize(hit_record.normal + rand3_on_sphere(seed));
                 col *= scene[hit_which].mat.colour * max(0., dot(r.d, hit_record.normal));
-                return false;*/
-
-                r.d = to_light;
-                //col *= (scene[hit_which].mat.colour * max(0., dot(r.d, hit_record.normal))) + (vec3(1.) * pow(max(0., dot(r.d, hit_record.normal)), 100.));
-                col *= (scene[hit_which].mat.colour * (0.03 + max(0., dot(r.d, hit_record.normal))))/1.03 + (vec3(1.) * pow(max(0., dot(r.d, hit_record.normal)), 100.));
-
-                //r.o += rand3_on_sphere(seed)/100.;
-                if ( World_hit(r, scene, 0.001, INF, hit_record, hit_which) ) {
-                    // Obscured
-                    col /= 10.;
-                }
-
-                return true;
+                return false;
             case 1: // mirror
                 r.d = reflect(r.d, hit_record.normal);
                 col *= scene[hit_which].mat.colour * max(0., dot(r.d, hit_record.normal));
@@ -224,8 +223,8 @@ bool trace(inout uint seed, inout Ray r, inout vec3 col) {
         }
     } else {
         // No hit
-        t = 0.5 * (clamp(r.d.y, -1., 1.) + 1.);
-        col *= t * vec3(.5, .7, 1.) + (1. - t) * vec3(1.) + vec3(.4) * max(0., dot(to_light, r.d));
+        float t = 0.5 * (clamp(r.d.y, -1., 1.) + 1.);
+        col *= t * vec3(.5, .7, 1.) + (1. - t) * vec3(1.) + vec3(.2) * max(0., dot(vec3(1., 0., 1.), r.d));
         return true;
     }
 }
@@ -242,6 +241,43 @@ vec3 bounce(inout uint seed, in Ray r) {
     return vec3(0.);
 }
 
+
+/* vec3 trace(Ray r, in const Sphere[WORLD_SIZE] world, in const float t_min, in const float t_max) {
+    Hit_Record hit;
+    int which;
+    vec3 direction;
+
+    /*vec3 col = vec3(1.);
+    for ( int k; k < MAX_BOUNCE; k++ ) {
+
+        if ( World_hit(r, world, 0., INF, hit) ) {
+            //col += clamp(0.5 * (vec3(1.) + hit.normal), 0., 1.);
+            //direction = normalize(hit.normal + rand_sphere());
+            direction = hit.normal;
+            col *= dot(direction, hit.normal);
+            r.o = hit.p;
+            r.d = direction;
+        } else {
+            float t = 0.5 * (clamp(r.d.y, -1., 1.) + 1.);
+            col *= t * vec3(.5, .7, 1.) + (1. - t) * vec3(1.);
+            return col + .2 * dot(vec3(1., 0., 1.), r.d);
+        }
+
+    }*/
+/*
+    vec3 col = vec3(0.);
+    if ( World_hit(r, world, 0., INF, hit, which) ) {
+        col = world[which].colour * max(0., dot(vec3(-1., 1., 1.), hit.normal));
+        return col;
+    } else {
+        float t = 0.5 * (clamp(r.d.y, -1., 1.) + 1.);
+        col = t * vec3(.5, .7, 1.) + (1. - t) * vec3(1.);
+        return col + .2 * max(0., dot(vec3(1., 0., 1.), r.d));
+    }
+    
+    return vec3(0.);
+} */
+
 void main() {
     // Initial
     vec3 final_col = vec3(0.);
@@ -253,7 +289,7 @@ void main() {
 
 
     // Setting up scene variables
-    float focal_length = 2.;
+    float focal_length = 1.;
 
     vec2 uv = (2 * gl_FragCoord.xy - dimensions.xy) / dimensions.y;
 
@@ -264,12 +300,11 @@ void main() {
     
     for ( uint j = 0; j < SAMPLES; j++ ) {
 
-        //uint frame_seed = hash(SAMPLES * frame + j);
-        //uint seed = hash(frame_seed ^ hash(uint(gl_FragCoord.x)*uint(dimensions.y) + uint(gl_FragCoord.y)));
+        uint frame_seed = hash(SAMPLES * frame + j);
+        uint seed = hash(frame_seed ^ hash(uint(gl_FragCoord.x)*uint(dimensions.y) + uint(gl_FragCoord.y)));
 
-        //uv = (2 * gl_FragCoord.xy - dimensions.xy + vec2(rand(seed), rand(seed))) / dimensions.y;
-        //dir = vec3(uv + vec2(rand(seed), rand(seed))/float(dimensions.y), focal_length);
-        dir = vec3(uv + 2.*rand2_in_circle(seed)/float(dimensions.y), focal_length);
+        uv = (2 * gl_FragCoord.xy - dimensions.xy + vec2(rand(seed), rand(seed))) / dimensions.y;
+        dir = vec3(uv, focal_length);
 
         Ray r = Ray(origin, normalize(-dir.x * canvas_side + dir.y * canvas_up + dir.z * forward));
         final_col += bounce(seed, r);
