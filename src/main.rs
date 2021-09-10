@@ -156,6 +156,9 @@ fn main() {
     let up_uniform = render_gl::Uniform::new("up", shader_program.id()).unwrap();
 
 
+    let focus_dist_uniform = render_gl::Uniform::new("focus_dist", shader_program.id()).unwrap();
+    let mut focus_dist: f32 = 2.;
+
     let mut canvas_side;
     let mut canvas_up;
 
@@ -167,16 +170,18 @@ fn main() {
     let mut frame_time: usize;
 
     //let mut frame = 0;
-    let frame_handle: gl::types::GLint;
-    unsafe {
+    //let frame_handle: gl::types::GLint;
+    let frame_uniform = render_gl::Uniform::new("frame", shader_program.id()).unwrap();
+
+    /*unsafe {
         let frame_name = &CString::new("frame").unwrap();
         frame_handle = gl::GetUniformLocation(
             shader_program.id(),
             frame_name.as_ptr() as *const gl::types::GLchar
         );
-    }
+    }*/
 
-    let keys_list = vec![Keycode::W, Keycode::A, Keycode::S, Keycode::D, Keycode::Space, Keycode::C];
+    let keys_list = vec![Keycode::W, Keycode::A, Keycode::S, Keycode::D, Keycode::Space, Keycode::C, Keycode::Up, Keycode::Down];
     let mut keys_down: HashSet<Keycode> = HashSet::new();
     let mut focus = false;
     //keys.insert(Keycode::W);
@@ -202,18 +207,22 @@ fn main() {
                 }
 
                 Event::MouseButtonUp { mouse_btn: sdl2::mouse::MouseButton::Left, .. } => {
-		    focus = !focus;
-		    sld_context.mouse().set_relative_mouse_mode(focus);
+                    focus = !focus;
+                    sld_context.mouse().set_relative_mouse_mode(focus);
                 }
                 
                 Event::MouseMotion { xrel: x, yrel: y, .. } => {
                 	if focus {
-        	                horizontal_angle += x as f32 / window_w as f32 * 6.;
-				vertical_angle += y as f32 / window_w as f32 * 6.;
-				vertical_angle = vertical_angle.max(-3.141/2.).min(3.141/2.);
-				//println!("{}", state.y());	
+                        horizontal_angle += x as f32 / window_w as f32 * 6.;
+                        vertical_angle += y as f32 / window_w as f32 * 6.;
+                        vertical_angle = vertical_angle.max(-3.141/2.).min(3.141/2.);
+                        //println!("{}", state.y());	
                 	}
                 	//println!("{}, {}", x, y);
+                }
+
+                Event::MouseWheel { direction: dir, .. } => {
+                    focus_dist += dir.to_ll() as f32 / 10.;
                 }
 
                 Event::Window { win_event, .. } => {
@@ -278,15 +287,15 @@ fn main() {
                 position -= speed * canvas_side * frame_time as f32;
             }
 
-            /*if focus {
-                let state = event_pump.relative_mouse_state();
-                horizontal_angle += state.x() as f32 / window_w as f32 * 6.;
-                vertical_angle += state.y() as f32 / window_w as f32 * 6.;
-                vertical_angle = vertical_angle.max(-3.141/2.).min(3.141/2.);
-                //println!("{}", state.y());
-            }*/
-
+            if keys_down.contains(&Keycode::Up) {
+                focus_dist += 0.1;
+            } else if keys_down.contains(&Keycode::Down) {
+                focus_dist -= 0.1;
+            }
             
+            focus_dist = focus_dist.max(0.);
+
+
             time += frame_time;
 
             //println!("{}", 1000/frame_time);
@@ -294,27 +303,17 @@ fn main() {
             position_uniform.push_3f(position);
             direction_uniform.push_3f(direction);
             up_uniform.push_3f(up);
-            
+            focus_dist_uniform.push_1f(focus_dist);
+            frame_uniform.push_1ui(time as u32);
+
             /*unsafe {
                 let test_name = CString::new("textureSampler").unwrap();
                 let test = gl::GetUniformLocation(
                     shader_program.id(),
                     test_name.as_ptr() as *const gl::types::GLchar
                 );
+            */
 
-                gl::Uniform1i(
-                    test,
-                    0
-                )
-            }*/
-
-            unsafe {
-                gl::ProgramUniform1ui(
-                    shader_program.id(),
-                    frame_handle,
-                    time as u32
-                )
-            }
 
             unsafe {
                 gl::BindVertexArray(vao);

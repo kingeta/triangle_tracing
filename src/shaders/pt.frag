@@ -8,6 +8,7 @@ uniform vec3 origin;
 uniform vec3 forward;
 uniform vec3 up;
 uniform uint frame;
+uniform float focus_dist;
 
 out vec4 Colour;
 
@@ -18,6 +19,8 @@ out vec4 Colour;
 #define WORLD_SIZE 4
 #define SAMPLES 4
 #define MAX_BOUNCE 5
+#define DOF_RADIUS 0.2
+
 
 #define DIFFUSE 0
 #define MIRROR 1
@@ -101,17 +104,6 @@ mat3 onb(vec3 u) {
 
 /// Cosine weighted sampling on the hemisphere defined by u.
 vec3 rand3_hemisphere_cos(vec3 u, inout uint seed) {
-    //let (v, w) = onb(u);
-    //mat3 onb_ = onb(u);
-    //vec3 r = rand3_cos(seed);
-    
-    // The cosine weighted random vector has positive z component;
-    // we want the transformed ray to be in the u direction, so
-    // r.z multiplies u. I believe this result should be of norm 1
-    // (so long as ONB is)
-    //r.z * u + r.x * v + r.y * w
-    
-    //return r.z * onb_[2] + r.x * onb_[0] + r.y * onb_[1];
     return onb(u) * rand3_cos(seed);
 }
 
@@ -315,36 +307,7 @@ bool trace(inout uint seed, inout Ray r, inout vec3 col) {
                 return true;
             case 3: // glass with n = 1.54
                 const float refr = 1.54;
-                /*float cos_ = dot(r.d, hit_record.normal);
-                float ratio;
-                bool refracted;
                 
-                if ( cos_ < 0. ) {
-                    ratio = 1./1.54;
-                } else {
-                    ratio = 1.54;
-                }
-                
-                vec3 refract_direction = refract_(r.d, -sign(cos_) * hit_record.normal, ratio, refracted);
-                
-                if ( refracted ) {
-                        float schlick_factor = schlick(abs(cos_), 1.54);
-
-                        vec3 reflect_direction = reflect(r.d, -sign(cos_) * hit_record.normal);
-
-                        if ( rand(seed) < schlick_factor ) { //dot(reflect_direction, normal).abs() * 
-                            //trace(scene,
-                            //    Ray::new(point + EPS * -cos.signum() * normal, reflect_direction), depth - 1)
-                            r.d = reflect_direction;
-                        } else {
-                            r.d = refract_direction;
-                            //trace(scene,
-                            //    Ray::new(point + EPS * cos.signum() * normal, refract_direction), depth - 1)    
-                        }
-                } else {
-                    r.d = reflect(r.d, hit_record.normal);
-                }
-                */
                 
                 float cos_ = dot(hit_record.normal, r.d);
                 vec3 norm = -hit_record.normal * sign(cos_);
@@ -419,21 +382,38 @@ void main() {
     vec3 dir;
     
 
-    
+    /*Hit_Record temp;
+    int _;
+    bool test = World_hit(Ray(origin, forward), scene, CLOSE, INF, temp, _);
+    float focus_dist;
+
+    if ( test ) {
+        focus_dist = temp.dist;
+        focus_dist = sqrt(length_squared(scene[_].centre - origin));
+    } else {
+        focus_dist = 1e3;
+    }*/
+
+
+    frame_seed = hash(frame);
+    seed = hash(frame_seed ^ hash(uint(gl_FragCoord.x)*uint(dimensions.y) + uint(gl_FragCoord.y)));
+
+
     for ( uint j = 0; j < SAMPLES; j++ ) {
 
-        frame_seed = hash(SAMPLES * frame + j);
-        seed = hash(frame_seed ^ hash(uint(gl_FragCoord.x)*uint(dimensions.y) + uint(gl_FragCoord.y)));
+        //frame_seed = hash(SAMPLES * frame + j);
+        //seed = hash(frame_seed ^ hash(uint(gl_FragCoord.x)*uint(dimensions.y) + uint(gl_FragCoord.y)));
 
-        float angle = abs(rand(seed)) * 2. * PI;
-        vec3 random_position = .1 * sqrt(abs(rand(seed))) * (sin(angle) * canvas_side + cos(angle) * canvas_up) * 0.;
+        float angle = rand(seed) * PI;
+        vec3 random_position = DOF_RADIUS * sqrt(abs(rand(seed))) * (sin(angle) * canvas_side + cos(angle) * canvas_up);
 
         //vec3 random_origin = random_position + origin;
         
-        uv = (2 * gl_FragCoord.xy - dimensions.xy + vec2(rand(seed), rand(seed))) / dimensions.y;
+        uv = ( 2 * (gl_FragCoord.xy +  abs(vec2(rand(seed), rand(seed))) ) - dimensions.xy) / dimensions.y;
         dir = vec3(uv, focal_length);
+        dir = normalize(-dir.x * canvas_side + dir.y * canvas_up + dir.z * forward);
 
-        Ray r = Ray(origin + random_position, normalize(-random_position/4. -dir.x * canvas_side + dir.y * canvas_up + dir.z * forward));
+        Ray r = Ray(origin + random_position, normalize(-random_position + focus_dist * dir));
         final_col += bounce(seed, r);
     }
 
@@ -443,6 +423,12 @@ void main() {
     final_col /= float(SAMPLES);
     final_col = vec3(1.) - exp(2. * -final_col);
     
+    if ( abs(2 * gl_FragCoord.x - dimensions.x) < 6 && abs(2 * gl_FragCoord.y - dimensions.y) < 6) {
+        final_col = vec3(1.) - final_col;
+    }
+
+    //final_col = vec3(focus_dist)/10.;
     Colour = vec4(pow(final_col, vec3(1./2.2)), 1.);
+    
     //Colour = vec4(final_col, 1.);
 }

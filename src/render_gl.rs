@@ -130,6 +130,26 @@ impl Uniform {
         }
     }
 
+    pub fn push_1ui(&self, i: u32) {
+        unsafe {
+            gl::ProgramUniform1ui(
+                self.shader_id,
+                self.handle,
+                i
+            )
+        }
+    }
+
+    pub fn push_1f(&self, t: f32) {
+        unsafe {
+            gl::ProgramUniform1f(
+                self.shader_id,
+                self.handle,
+                t
+            )
+        }
+    }
+
     pub fn handle(self) -> gl::types::GLint {
         self.handle
     }
