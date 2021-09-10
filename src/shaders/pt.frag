@@ -17,7 +17,7 @@ out vec4 Colour;
 #define INF 1.e+10
 #define CLOSE 0.001
 #define PI 3.141592653
-#define WORLD_SIZE 4
+//#define WORLD_SIZE 4
 #define SAMPLES 4
 #define MAX_BOUNCE 6
 //#define DOF_RADIUS 0.2
@@ -128,6 +128,7 @@ struct Hit_Record {
     vec3 normal;
 };
 
+
 struct Mat {
     vec3 colour;
     uint type;
@@ -135,6 +136,7 @@ struct Mat {
     // 1: mirror
     // 2: light
 };
+
 
 struct Sphere {
     vec3 centre;
@@ -183,7 +185,7 @@ bool Sphere_hit(in Ray r, in const Sphere sphere, in const float t_min, in const
 }
 
 
-const Sphere scene[] = Sphere[](
+const Sphere scene_[] = Sphere[](
     Sphere( // Left
         vec3(-2., 0., 0.), 1.,
         Mat(
@@ -252,7 +254,70 @@ const Sphere scene2[] = Sphere[](
     )
 );
 
-bool World_hit(in Ray r, in const Sphere[WORLD_SIZE] world, in const float t_min, in const float t_max, out Hit_Record hit_record, out int hit_which) {
+struct Triangle {
+    mat3 pts;
+    vec3 norm;
+    Mat mat;
+};
+
+
+bool Triangle_hit(in Ray r, in const Triangle t, in const float t_min, in const float t_max, out Hit_Record hit) {
+    float EPS = 0.000001;
+
+    float norm_dot_d = dot(r.d, t.norm);
+    float norm_dot_o = dot(r.o, t.norm);
+
+    if ( abs(norm_dot_d) > EPS ) {
+        float lambda = (dot(t.pts[0], t.norm)-norm_dot_o)/norm_dot_d;
+
+        vec3 point = Ray_position(r, lambda);
+
+        if ( lambda > EPS
+            && dot(t.norm, cross(point-t.pts[0], t.pts[1]-t.pts[0])) <= EPS
+            && dot(t.norm, cross(point-t.pts[1], t.pts[2]-t.pts[1])) <= EPS
+            && dot(t.norm, cross(point-t.pts[2], t.pts[0]-t.pts[2])) <= EPS ) {
+            // Hit
+            hit.dist = lambda;
+            hit.p = point;
+            hit.normal = t.norm;
+            return true;
+        } else {
+            // No hit
+            return false;
+        }
+
+    } else {
+        // Ray from wrong direction
+        return false;
+    }
+}
+
+
+#define WORLD_SIZE 2
+
+const Triangle scene[] = Triangle[](
+    Triangle(
+        mat3(vec3(0., 0., 0.), vec3(1., 0., 0.), vec3(0., 1., 0.)),
+        vec3(0., 0., 1.),
+        Mat(
+            vec3(0.2),
+            0
+        )
+    ),
+    Triangle(
+        mat3(vec3(1., 0., 0.), vec3(1., 1., 0.), vec3(0., 1., 0.)),
+        vec3(0., 0., 1.),
+        Mat(
+            vec3(0.2),
+            0
+        )
+    )
+);
+
+
+
+
+bool World_hit_(in Ray r, in const Sphere[WORLD_SIZE] world, in const float t_min, in const float t_max, out Hit_Record hit_record, out int hit_which) {
     bool hit_happened = false;
     float closest = t_max;
     Hit_Record temp_record;
@@ -268,6 +333,24 @@ bool World_hit(in Ray r, in const Sphere[WORLD_SIZE] world, in const float t_min
 
     return hit_happened;
 }
+
+bool World_hit(in Ray r, in const Triangle[WORLD_SIZE] world, in const float t_min, in const float t_max, out Hit_Record hit_record, out int hit_which) {
+    bool hit_happened = false;
+    float closest = t_max;
+    Hit_Record temp_record;
+
+    for ( int i = 0; i < WORLD_SIZE; i++ ) {
+        if ( Triangle_hit(r, world[i], t_min, t_max, temp_record) && temp_record.dist < closest ) {
+            hit_happened = true;
+            closest = temp_record.dist;
+            hit_record = temp_record;
+            hit_which = i;
+        }
+    }
+
+    return hit_happened;
+}
+
 
 
 const vec3 SUN_DIRECTION = vec3(0.577350, 0.577350, 0.577350);

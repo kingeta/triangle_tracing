@@ -46,7 +46,10 @@ impl Shape for Triangle {
             //let point = ray.origin + t*ray.direction;
             let point = ray.eval(t);
 
-            if t > EPS && dot(self.normal, cross(point-self.a, self.b-self.a)) <= 10. * EPS && dot(self.normal, cross(point-self.b, self.c-self.b)) <= 10. * EPS && dot(self.normal, cross(point-self.c, self.a-self.c)) <= 10. * EPS {
+            if t > EPS
+                && dot(self.normal, cross(point-self.a, self.b-self.a)) <= 10. * EPS
+                && dot(self.normal, cross(point-self.b, self.c-self.b)) <= 10. * EPS
+                && dot(self.normal, cross(point-self.c, self.a-self.c)) <= 10. * EPS {
                 Some(Hit {
                     dist: t,
                     point: point,
