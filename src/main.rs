@@ -140,7 +140,7 @@ fn main() {
 
 
     //let mut position: Vec<f32> = vec![0., 0., 0.];
-    let mut position: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::unit_z();
+    let mut position: cgmath::Vector3<f32> = 3. * cgmath::Vector3::<f32>::unit_z();
     let position_uniform = render_gl::Uniform::new("origin", shader_program.id()).unwrap();
 
     //let (mut mouse_x, mut mouse_y): (i32, i32) = (0, 0);
@@ -159,6 +159,9 @@ fn main() {
     let focus_dist_uniform = render_gl::Uniform::new("focus_dist", shader_program.id()).unwrap();
     let mut focus_dist: f32 = 2.;
 
+    let focus_radius_uniform = render_gl::Uniform::new("DOF_RADIUS", shader_program.id()).unwrap();
+    let mut focus_radius: f32 = 0.;
+
     let mut canvas_side;
     let mut canvas_up;
 
@@ -169,24 +172,14 @@ fn main() {
     let mut current_time: usize = 0;
     let mut frame_time: usize;
 
-    //let mut frame = 0;
-    //let frame_handle: gl::types::GLint;
+
     let frame_uniform = render_gl::Uniform::new("frame", shader_program.id()).unwrap();
 
-    /*unsafe {
-        let frame_name = &CString::new("frame").unwrap();
-        frame_handle = gl::GetUniformLocation(
-            shader_program.id(),
-            frame_name.as_ptr() as *const gl::types::GLchar
-        );
-    }*/
 
-    let keys_list = vec![Keycode::W, Keycode::A, Keycode::S, Keycode::D, Keycode::Space, Keycode::C, Keycode::Up, Keycode::Down];
+
+    let keys_list = vec![Keycode::W, Keycode::A, Keycode::S, Keycode::D, Keycode::Space, Keycode::C, Keycode::Up, Keycode::Down, Keycode::Left, Keycode::Right];
     let mut keys_down: HashSet<Keycode> = HashSet::new();
     let mut focus = false;
-    //keys.insert(Keycode::W);
-
-    //sld_context.mouse().set_relative_mouse_mode(true);
 
     let mut event_pump = sld_context.event_pump().unwrap();
     'main: loop {
@@ -288,24 +281,30 @@ fn main() {
             }
 
             if keys_down.contains(&Keycode::Up) {
-                focus_dist += 0.1;
+                focus_dist += 0.01 * frame_time as f32;
             } else if keys_down.contains(&Keycode::Down) {
-                focus_dist -= 0.1;
+                focus_dist -= 0.01 * frame_time as f32;
             }
             
-            focus_dist = focus_dist.max(0.);
+            if keys_down.contains(&Keycode::Right) {
+                focus_radius += 0.001 * frame_time as f32;
+            } else if keys_down.contains(&Keycode::Left) {
+                focus_radius -= 0.001 * frame_time as f32;
+            }
 
+            focus_dist = focus_dist.max(0.);
+            focus_radius = focus_radius.max(0.);
 
             time += frame_time;
 
-            //println!("{}", 1000/frame_time);
 
             position_uniform.push_3f(position);
             direction_uniform.push_3f(direction);
             up_uniform.push_3f(up);
             focus_dist_uniform.push_1f(focus_dist);
+            focus_radius_uniform.push_1f(focus_radius);
             frame_uniform.push_1ui(time as u32);
-
+	
             /*unsafe {
                 let test_name = CString::new("textureSampler").unwrap();
                 let test = gl::GetUniformLocation(

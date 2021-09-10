@@ -9,6 +9,7 @@ uniform vec3 forward;
 uniform vec3 up;
 uniform uint frame;
 uniform float focus_dist;
+uniform float DOF_RADIUS;
 
 out vec4 Colour;
 
@@ -18,8 +19,8 @@ out vec4 Colour;
 #define PI 3.141592653
 #define WORLD_SIZE 4
 #define SAMPLES 4
-#define MAX_BOUNCE 5
-#define DOF_RADIUS 0.2
+#define MAX_BOUNCE 6
+//#define DOF_RADIUS 0.2
 
 
 #define DIFFUSE 0
@@ -145,8 +146,10 @@ struct Sphere {
 
 bool Sphere_hit(in Ray r, in const Sphere sphere, in const float t_min, in const float t_max, out Hit_Record hit) {
     vec3 oc = r.o - sphere.centre;
-    //float a = dot(r.d, r.d);
-    float a = length_squared(r.d);
+
+    //float a = length_squared(r.d);
+    float a = 1.;
+
     float half_b = dot(oc, r.d);
     //float c = dot(oc, oc) - radius * radius;
     float c = length_squared(oc) - sphere.radius * sphere.radius;
@@ -293,21 +296,27 @@ bool trace(inout uint seed, inout Ray r, inout vec3 col) {
         switch ( scene[hit_which].mat.type ) {
             case 0: // diffuse
                 //r.d = normalize(hit_record.normal + rand3_on_sphere(seed));
+                col *= scene[hit_which].mat.colour * sign(max(0., -dot(r.d, hit_record.normal)));
+                //r.o += 0.0001 * hit_record.normal;
                 r.d = rand3_hemisphere_cos(hit_record.normal, seed);
-                //col *= scene[hit_which].mat.colour * max(0., dot(r.d, hit_record.normal));
-                col *= scene[hit_which].mat.colour;
+                
+                /*
+                vec3 te = rand3_on_sphere(seed);
+                r.d = te * sign(dot(te, hit_record.normal));
+                col *= dot(r.d, hit_record.normal);
+                */
+                
                 return false;
             case 1: // mirror
-                r.d = reflect(r.d, hit_record.normal);
                 // col *= scene[hit_which].mat.colour * max(0., dot(r.d, hit_record.normal)); // with cos
                 col *= scene[hit_which].mat.colour; // without cos
+                r.d = reflect(r.d, hit_record.normal);
                 return false;
             case 2: // light
                 col *= scene[hit_which].mat.colour;
                 return true;
             case 3: // glass with n = 1.54
                 const float refr = 1.54;
-                
                 
                 float cos_ = dot(hit_record.normal, r.d);
                 vec3 norm = -hit_record.normal * sign(cos_);
@@ -354,6 +363,13 @@ vec3 bounce(inout uint seed, in Ray r) {
         if ( trace(seed, r, col) ) {
             return col;
         }
+        
+        /*float p = max(col.x, max(col.y, col.z));
+        if ( abs(rand(seed)) > p ) {
+            return vec3(0.);
+        }
+        
+        col *= 1. / p;*/
     }
 
     return vec3(0.);
