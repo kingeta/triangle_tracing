@@ -11,6 +11,19 @@ use cgmath::prelude::*;
 
 pub mod render_gl;
 
+fn next_power_of_2(x: i32) -> i32 {
+    let mut y = x;
+    y -= 1;
+    y |= y >> 1;
+    y |= y >> 2;
+    y |= y >> 4;
+    y |= y >> 8;
+    y |= y >> 16;
+    y += 1;
+    y
+
+}
+
 fn main() {
     // Starting SDL
     let (mut window_w, mut window_h) = (1200i32, 650i32);
@@ -25,7 +38,7 @@ fn main() {
     
     let window = video_subsystem.window("Test", window_w as u32, window_h as u32)
         .opengl()
-        .resizable()
+        //.resizable()
         .build()
         .unwrap();
 
@@ -34,16 +47,28 @@ fn main() {
 
     // Bind and create shaders
     let vert_shader = render_gl::Shader::from_vert_source(
-        &CString::new(include_str!("shaders/quad.vert")).unwrap()
+        &CString::new(include_str!("shaders/quad2.vert")).unwrap()
     ).unwrap();
 
     let frag_shader = render_gl::Shader::from_frag_source(
-        &CString::new(include_str!("shaders/pt.frag")).unwrap()
+        &CString::new(include_str!("shaders/tex.frag")).unwrap()
     ).unwrap();
 
-    let shader_program = render_gl::Program::from_shaders(
+    let comp_shader = render_gl::Shader::from_comp_source(
+        &CString::new(include_str!("shaders/pt.comp")).unwrap()
+    ).unwrap();
+
+
+    let quad_program = render_gl::Program::from_shaders(
         &[vert_shader, frag_shader]
     ).unwrap();
+
+    let comp_program = render_gl::Program::from_shaders(
+        &[comp_shader]
+    ).unwrap();
+
+
+    quad_program.set_used();
 
     // Setup the background quad
     let quad: Vec<f32> = vec![
@@ -93,25 +118,43 @@ fn main() {
         gl::BindVertexArray(0);
     }
 
-    /*let mut tex_rand: gl::types::GLuint = 0;
+    let tex_handle;
     unsafe {
-        gl::GenTextures(1, &mut tex_rand);
-        gl::BindTexture(gl::TEXTURE_1D, tex_rand);
-        gl::TexStorage1D(gl::TEXTURE_1D, 1, gl::RGB8, 100);
-        gl::TexSubImage1D()
-    }*/
+        tex_handle = gl::GetUniformLocation(
+            quad_program.id(),
+            "tex".as_ptr() as *const gl::types::GLchar
+        );
+        gl::Uniform1i(tex_handle, 0);
+    }
+
+    comp_program.set_used();
+    let mut work_group_size: [i32; 3] = [0; 3];
+    unsafe {
+        //let work_group_size: Vec::<isize>;
+        gl::GetProgramiv(
+            comp_program.id(),
+            gl::COMPUTE_WORK_GROUP_SIZE,
+            &mut work_group_size as *mut gl::types::GLint
+        );
+        //println!("{:?}", work_group_size);
+    }
+
 
     let mut tex_id: gl::types::GLuint = 0;
     unsafe {
-        gl::ActiveTexture(gl::TEXTURE0);
         gl::GenTextures(1, &mut tex_id);
-        gl::BindTexture(gl::TEXTURE_1D, tex_id);
-        gl::TexStorage1D(gl::TEXTURE_1D, 1, gl::RGB8, 4);
-        gl::TexSubImage1D(gl::TEXTURE_1D, 0, 0, 4, gl::R32I, gl::UNSIGNED_BYTE, vec![4 as i32, 12 as i32, 200 as i32, 150 as i32].as_ptr() as *const std::ffi::c_void);
+        gl::BindTexture(gl::TEXTURE_2D, tex_id);
+        gl::TexStorage2D(gl::TEXTURE_2D, 1, gl::RGBA32F, window_w, window_h);
 
-        gl::TexParameteri(gl::TEXTURE_1D, gl::TEXTURE_MIN_FILTER, 0);
-        gl::BindTexture(gl::TEXTURE_1D, tex_id);
+        //gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGBA32F);
+        gl::TexSubImage2D(gl::TEXTURE_2D, 0, 0, 0, window_w, window_h, gl::RGBA32F, gl::FLOAT, vec![0.; (window_w*window_h) as usize].as_ptr() as *const std::ffi::c_void);
+        gl::GenerateMipmap(gl::TEXTURE_2D);
+        gl::SamplerParameteri(tex_id, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+        gl::SamplerParameteri(tex_id, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+
+        gl::BindTexture(gl::TEXTURE_2D, 0);
     }
+
 
     // Setup some random opengl stuff
     unsafe {
@@ -119,17 +162,19 @@ fn main() {
         gl::ClearColor(0.0, 1.0, 0.0, 1.0);
     }
 
+    /* !!!!
+
     // Uniforms
     let viewport_handle: gl::types::GLint;
     unsafe {
         let viewport_name = &CString::new("viewport").unwrap();
         viewport_handle = gl::GetUniformLocation(
-            shader_program.id(),
+            quad_program.id(),
             viewport_name.as_ptr() as *const gl::types::GLchar
         );
 
         gl::ProgramUniform4i(
-            shader_program.id(),
+            quad_program.id(),
             viewport_handle,
             0,
             0,
@@ -138,49 +183,43 @@ fn main() {
         );
     }
 
+    !!!! */
 
-    //let mut position: Vec<f32> = vec![0., 0., 0.];
     let mut position: cgmath::Vector3<f32> = 3. * cgmath::Vector3::<f32>::unit_z();
-    let position_uniform = render_gl::Uniform::new("origin", shader_program.id()).unwrap();
+    let position_uniform = render_gl::Uniform::new("origin", comp_program.id()).unwrap();
 
-    //let (mut mouse_x, mut mouse_y): (i32, i32) = (0, 0);
-    //let (mut mouse_x_old, mut mouse_y_old): (i32, i32);
-    //let (mut theta, mut phi): (f32, f32) = (0., 0.);
-    
     let mut direction: cgmath::Vector3<f32>; // = -cgmath::Vector3::<f32>::unit_z();
-    let direction_uniform = render_gl::Uniform::new("forward", shader_program.id()).unwrap();
+    let direction_uniform = render_gl::Uniform::new("forward", comp_program.id()).unwrap();
     let mut horizontal_angle: f32 = 0.;
     let mut vertical_angle: f32 = 0.;
     
     let up: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::unit_y();
-    let up_uniform = render_gl::Uniform::new("up", shader_program.id()).unwrap();
+    let up_uniform = render_gl::Uniform::new("up", comp_program.id()).unwrap();
 
 
-    let focus_dist_uniform = render_gl::Uniform::new("focus_dist", shader_program.id()).unwrap();
+    let focus_dist_uniform = render_gl::Uniform::new("focus_dist", comp_program.id()).unwrap();
     let mut focus_dist: f32 = 2.;
 
-    let focus_radius_uniform = render_gl::Uniform::new("DOF_RADIUS", shader_program.id()).unwrap();
+    let focus_radius_uniform = render_gl::Uniform::new("focus_radius", comp_program.id()).unwrap();
     let mut focus_radius: f32 = 0.;
 
     let mut canvas_side;
     let mut canvas_up;
 
     let speed = 0.005; // in units per millisecond
-    //let mouse_speed = 0.005 / (2. * 3.141); // in radians per pixel
     let mut time: usize = 0;
     let mut new_time: usize;
     let mut current_time: usize = 0;
     let mut frame_time: usize;
-
-
-    let frame_uniform = render_gl::Uniform::new("frame", shader_program.id()).unwrap();
-
-
+    let frame_uniform = render_gl::Uniform::new("frame", comp_program.id()).unwrap();
+    
 
     let keys_list = vec![Keycode::W, Keycode::A, Keycode::S, Keycode::D, Keycode::Space, Keycode::C, Keycode::Up, Keycode::Down, Keycode::Left, Keycode::Right];
     let mut keys_down: HashSet<Keycode> = HashSet::new();
     let mut focus = false;
 
+
+    let timer = sld_context.timer().unwrap();
     let mut event_pump = sld_context.event_pump().unwrap();
     'main: loop {
 
@@ -209,16 +248,14 @@ fn main() {
                         horizontal_angle += x as f32 / window_w as f32 * 6.;
                         vertical_angle += y as f32 / window_w as f32 * 6.;
                         vertical_angle = vertical_angle.max(-3.141/2.).min(3.141/2.);
-                        //println!("{}", state.y());	
                 	}
-                	//println!("{}, {}", x, y);
                 }
 
                 Event::MouseWheel { direction: dir, .. } => {
                     focus_dist += dir.to_ll() as f32 / 10.;
                 }
 
-                Event::Window { win_event, .. } => {
+                /* !!! Event::Window { win_event, .. } => {
                     if let sdl2::event::WindowEvent::Resized(new_w, new_h) = win_event {
                         window_w = new_w;
                         window_h = new_h;
@@ -226,7 +263,7 @@ fn main() {
                             gl::Viewport(0, 0, window_w, window_h);
                             
                             gl::ProgramUniform4i(
-                                shader_program.id(),
+                                quad_program.id(),
                                 viewport_handle,
                                 0,
                                 0,
@@ -235,32 +272,19 @@ fn main() {
                             );
                         }
                     }
-                }
+                } !!! */
 
                 _ => {break},
             }}
             
-            unsafe {
-                gl::Clear(gl::COLOR_BUFFER_BIT);
-            }
-
-            shader_program.set_used();
-            
-            //println!("{}, {}", canvas_side.magnitude(), canvas_up.magnitude());
 
             direction = cgmath::vec3(horizontal_angle.sin(), -vertical_angle.sin(), -horizontal_angle.cos() * vertical_angle.cos());
             canvas_side = up.cross(direction).normalize(); //norm cross up direction
             canvas_up = direction.cross(canvas_side);
-            //println!("{:?}, {:?}, {:?}, {:?}, {:?}", horizontal_angle, vertical_angle, direction, canvas_up, canvas_side);
-           
-            //println!("Side: {:?}, up: {:?}, direction: {:?}", canvas_side.magnitude(), canvas_up.magnitude(), direction.magnitude());
 
-            new_time = sld_context.timer().unwrap().ticks() as usize;
+            new_time = timer.ticks() as usize;
             frame_time = new_time - current_time;
             current_time = new_time;
-            //println!("{}", frame_time);
-            // Time stuff
-
 
             if keys_down.contains(&Keycode::W) {
                 position += speed * direction * frame_time as f32;
@@ -297,30 +321,47 @@ fn main() {
 
             time += frame_time;
 
+            unsafe {
+                gl::Clear(gl::COLOR_BUFFER_BIT);
+            }
+
+            comp_program.set_used();
 
             position_uniform.push_3f(position);
             direction_uniform.push_3f(direction);
             up_uniform.push_3f(up);
+            frame_uniform.push_1ui(time as u32);
             focus_dist_uniform.push_1f(focus_dist);
             focus_radius_uniform.push_1f(focus_radius);
-            frame_uniform.push_1ui(time as u32);
-	
-            /*unsafe {
-                let test_name = CString::new("textureSampler").unwrap();
-                let test = gl::GetUniformLocation(
-                    shader_program.id(),
-                    test_name.as_ptr() as *const gl::types::GLchar
-                );
-            */
-
 
             unsafe {
+                gl::BindImageTexture(0, tex_id, 0, gl::FALSE, 0, gl::WRITE_ONLY, gl::RGBA32F);
+            }
+
+            let work_x = next_power_of_2(window_w);
+            let work_y = next_power_of_2(window_h);
+
+            unsafe {
+                gl::DispatchCompute((work_x / work_group_size[0]) as u32, (work_y / work_group_size[1]) as u32, 1);
+
+                gl::BindImageTexture(0, 0, 0, gl::FALSE, 0, gl::READ_WRITE, gl::RGBA32F);
+                gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                gl::UseProgram(0);
+            }
+
+            quad_program.set_used();
+            
+            unsafe {
                 gl::BindVertexArray(vao);
+                gl::BindTexture(gl::TEXTURE_2D, tex_id);
                 gl::DrawArrays(
                     gl::TRIANGLES, // mode
                     0, // start index
                     6 // # indices to be rendered
-                )
+                );
+
+                gl::BindTexture(gl::TEXTURE_2D, 0);
+                gl::UseProgram(0);
             }
             
             window.gl_swap_window();

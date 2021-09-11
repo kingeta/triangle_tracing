@@ -1,26 +1,21 @@
 #version 430 core
-//#version 450 core
 
+layout(binding = 0, rgba32f) uniform image2D framebuffer;
 
-uniform isampler1D textureSampler;
-uniform ivec4 viewport;
+//uniform ivec4 viewport;
 uniform vec3 origin;
 uniform vec3 forward;
 uniform vec3 up;
 uniform uint frame;
 uniform float focus_dist;
-uniform float DOF_RADIUS;
+uniform float focus_radius;
 
-out vec4 Colour;
 
-//#define INF 3.402823466e+38
 #define INF 1.e+10
 #define CLOSE 0.001
 #define PI 3.141592653
-//#define WORLD_SIZE 4
 #define SAMPLES 4
 #define MAX_BOUNCE 6
-//#define DOF_RADIUS 0.2
 
 
 #define DIFFUSE 0
@@ -266,6 +261,30 @@ bool Triangle_hit(in Ray r, in const Triangle t, in const float t_min, in const 
 
     float norm_dot_d = dot(r.d, t.norm);
     float norm_dot_o = dot(r.o, t.norm);
+    float lambda = (dot(t.pts[0], t.norm)-norm_dot_o)/norm_dot_d;
+    
+    vec3 point = Ray_position(r, lambda);
+
+    if ( abs(norm_dot_d) > EPS && lambda > EPS
+            && dot(t.norm, cross(point-t.pts[0], t.pts[1]-t.pts[0])) <= EPS
+            && dot(t.norm, cross(point-t.pts[1], t.pts[2]-t.pts[1])) <= EPS
+            && dot(t.norm, cross(point-t.pts[2], t.pts[0]-t.pts[2])) <= EPS ) {
+            // Hit
+            hit.dist = lambda;
+            hit.p = point;
+            hit.normal = t.norm;
+            return true;
+    } else {
+        // Ray from wrong direction
+        return false;
+    }
+}
+
+bool Triangle_hit_old(in Ray r, in const Triangle t, in const float t_min, in const float t_max, out Hit_Record hit) {
+    float EPS = 0.000001;
+
+    float norm_dot_d = dot(r.d, t.norm);
+    float norm_dot_o = dot(r.o, t.norm);
 
     if ( abs(norm_dot_d) > EPS ) {
         float lambda = (dot(t.pts[0], t.norm)-norm_dot_o)/norm_dot_d;
@@ -291,6 +310,7 @@ bool Triangle_hit(in Ray r, in const Triangle t, in const float t_min, in const 
         return false;
     }
 }
+
 
 
 #define WORLD_SIZE 2
@@ -458,76 +478,67 @@ vec3 bounce(inout uint seed, in Ray r) {
     return vec3(0.);
 }
 
-void main() {
-    // Initial
-    vec3 final_col = vec3(0.);
-    ivec2 dimensions = viewport.zw;
-    // (Divided by height i.e uv.x \in [-r, r], uv.y \in [-1, 1], r = width/height (generally > 1))
 
-    //uint frame_seed = hash(frame);
-    //uint seed = hash(frame_seed ^ hash(uint(gl_FragCoord.x)*uint(dimensions.y) + uint(gl_FragCoord.y)));
+
+layout (local_size_x = 16, local_size_y = 8) in;
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    //ivec2 size = imageSize(framebuffer);
+    //vec2 pix = vec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(framebuffer);
+    //vec2 sizef = vec2(size);
+
+    if (pix.x >= size.x || pix.y >= size.y) {
+        return;
+    }
+
+    //vec2 pos = vec2(pix) / vec2(size.x - 1, size.y - 1);
+    //vec4 colour = vec4(vec3(focus_radius), 1.);
+
+    vec3 final_col = vec3(0.);
+
     uint frame_seed;
     uint seed;
 
-    // Setting up scene variables
     float focal_length = 1.;
-
-    //vec2 uv = (2 * gl_FragCoord.xy - dimensions.xy) / dimensions.y;
     vec2 uv;
     
     vec3 canvas_side = normalize(cross(up, forward));
     vec3 canvas_up = cross(forward, canvas_side);
-    //vec3 dir = vec3(uv, focal_length);
     vec3 dir;
     
-
-    /*Hit_Record temp;
-    int _;
-    bool test = World_hit(Ray(origin, forward), scene, CLOSE, INF, temp, _);
-    float focus_dist;
-
-    if ( test ) {
-        focus_dist = temp.dist;
-        focus_dist = sqrt(length_squared(scene[_].centre - origin));
-    } else {
-        focus_dist = 1e3;
-    }*/
-
-
     frame_seed = hash(frame);
-    seed = hash(frame_seed ^ hash(uint(gl_FragCoord.x)*uint(dimensions.y) + uint(gl_FragCoord.y)));
+    seed = hash(frame_seed ^ hash(uint(pix.x) * uint(size.y) + uint(pix.y)));
+    Ray r;
 
+    float angle;
+    vec3 random_position;
 
     for ( uint j = 0; j < SAMPLES; j++ ) {
 
         //frame_seed = hash(SAMPLES * frame + j);
         //seed = hash(frame_seed ^ hash(uint(gl_FragCoord.x)*uint(dimensions.y) + uint(gl_FragCoord.y)));
 
-        float angle = rand(seed) * PI;
-        vec3 random_position = DOF_RADIUS * sqrt(abs(rand(seed))) * (sin(angle) * canvas_side + cos(angle) * canvas_up);
-
-        //vec3 random_origin = random_position + origin;
+        angle = rand(seed) * PI;
+        random_position = focus_radius * sqrt(abs(rand(seed))) * (sin(angle) * canvas_side + cos(angle) * canvas_up);
         
-        uv = ( 2 * (gl_FragCoord.xy +  abs(vec2(rand(seed), rand(seed))) ) - dimensions.xy) / dimensions.y;
-        dir = vec3(uv, focal_length);
-        dir = normalize(-dir.x * canvas_side + dir.y * canvas_up + dir.z * forward);
+        uv = ( 2 * (vec2(pix.xy) +  abs(vec2(rand(seed), rand(seed))) ) - vec2(size.xy)) / float(size.y);
 
-        Ray r = Ray(origin + random_position, normalize(-random_position + focus_dist * dir));
+        dir = mat3(-canvas_side, canvas_up, forward) * vec3(uv, focal_length);
+        //dir = normalize(-dir.x * canvas_side + dir.y * canvas_up + dir.z * forward);
+
+        r = Ray(origin + random_position, normalize(-random_position + focus_dist * dir));
         final_col += bounce(seed, r);
     }
 
-    //final_col = vec3(rand(seed));
-
-    //Colour = vec4(pow(final_col / float(SAMPLES), vec3(1./2.2)), 1.);
     final_col /= float(SAMPLES);
     final_col = vec3(1.) - exp(2. * -final_col);
     
-    if ( abs(2 * gl_FragCoord.x - dimensions.x) < 6 && abs(2 * gl_FragCoord.y - dimensions.y) < 6) {
+    /*if ( abs(2 * pix.x - size.x) < 6 && abs(2 * pix.y - size.y) < 6) {
         final_col = vec3(1.) - final_col;
-    }
+    }*/
 
-    //final_col = vec3(focus_dist)/10.;
-    Colour = vec4(pow(final_col, vec3(1./2.2)), 1.);
-    
-    //Colour = vec4(final_col, 1.);
+    vec4 colour = vec4(pow(final_col, vec3(1./2.2)), 1.);
+
+    imageStore(framebuffer, pix, colour);
 }

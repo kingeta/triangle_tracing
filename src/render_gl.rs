@@ -85,6 +85,10 @@ impl Shader {
         Shader::from_source(source, gl::FRAGMENT_SHADER)
     }
 
+    pub fn from_comp_source(source: &CStr) -> Result<Shader, String> {
+        Shader::from_source(source, gl::COMPUTE_SHADER)
+    }
+
     pub fn id(&self) -> gl::types::GLuint {
         self.id
     }
