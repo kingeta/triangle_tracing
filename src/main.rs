@@ -219,6 +219,12 @@ fn main() {
     let mut focus = false;
 
 
+    let mut query: gl::types::GLuint = 0;
+    unsafe {
+        gl::GenQueries(1, &mut query);
+    }
+    let mut prev: gl::types::GLint = 0;
+
     let timer = sld_context.timer().unwrap();
     let mut event_pump = sld_context.event_pump().unwrap();
     'main: loop {
@@ -322,6 +328,10 @@ fn main() {
             time += frame_time;
 
             unsafe {
+                gl::BeginQuery(gl::TIME_ELAPSED, query);
+            }
+
+            unsafe {
                 gl::Clear(gl::COLOR_BUFFER_BIT);
             }
 
@@ -365,6 +375,17 @@ fn main() {
             }
             
             window.gl_swap_window();
+
+
+            unsafe {
+                let mut test: gl::types::GLint = 0;
+                gl::EndQuery(gl::TIME_ELAPSED);
+                gl::GetQueryObjectiv(query, gl::QUERY_RESULT, &mut test);
+                //println!("GPU time: {}ms", test as f64 / 1_000_000.);
+                prev = test;
+            }
+
+            //println!("Frame time: {}ms", frame_time);
         }
     }
 }
