@@ -27,6 +27,7 @@ fn next_power_of_2(x: i32) -> i32 {
 fn main() {
     // Starting SDL
     let (mut window_w, mut window_h) = (1200i32, 650i32);
+    //let (window_w, window_h) = (1200i32, 650i32);
     let sld_context = sdl2::init().unwrap();
     let video_subsystem = sld_context.video().unwrap();
 
@@ -38,7 +39,8 @@ fn main() {
     
     let window = video_subsystem.window("Test", window_w as u32, window_h as u32)
         .opengl()
-        //.resizable()
+        .resizable()
+        //.fullscreen()
         .build()
         .unwrap();
 
@@ -118,6 +120,7 @@ fn main() {
         gl::BindVertexArray(0);
     }
 
+    // Unnecessary?
     let tex_handle;
     unsafe {
         tex_handle = gl::GetUniformLocation(
@@ -219,12 +222,6 @@ fn main() {
     let mut focus = false;
 
 
-    let mut query: gl::types::GLuint = 0;
-    unsafe {
-        gl::GenQueries(1, &mut query);
-    }
-    let mut prev: gl::types::GLint = 0;
-
     let timer = sld_context.timer().unwrap();
     let mut event_pump = sld_context.event_pump().unwrap();
     'main: loop {
@@ -261,24 +258,35 @@ fn main() {
                     focus_dist += dir.to_ll() as f32 / 10.;
                 }
 
-                /* !!! Event::Window { win_event, .. } => {
+                Event::Window { win_event, .. } => {
                     if let sdl2::event::WindowEvent::Resized(new_w, new_h) = win_event {
+
                         window_w = new_w;
                         window_h = new_h;
+
+                        quad_program.set_used();
                         unsafe {
                             gl::Viewport(0, 0, window_w, window_h);
-                            
-                            gl::ProgramUniform4i(
-                                quad_program.id(),
-                                viewport_handle,
-                                0,
-                                0,
-                                window_w,
-                                window_h
-                            );
                         }
+                        comp_program.set_used();
+
+                        unsafe {
+                            gl::Viewport(0, 0, window_w, window_h);
+
+                            gl::GenTextures(1, &mut tex_id);
+                            gl::BindTexture(gl::TEXTURE_2D, tex_id);
+                            gl::TexStorage2D(gl::TEXTURE_2D, 1, gl::RGBA32F, window_w, window_h);
+                    
+                            gl::TexSubImage2D(gl::TEXTURE_2D, 0, 0, 0, window_w, window_h, gl::RGBA32F, gl::FLOAT, vec![0.; (window_w*window_h) as usize].as_ptr() as *const std::ffi::c_void);
+                            gl::GenerateMipmap(gl::TEXTURE_2D);
+                            gl::SamplerParameteri(tex_id, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+                            gl::SamplerParameteri(tex_id, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+                    
+                            gl::BindTexture(gl::TEXTURE_2D, 0);
+                        }
+
                     }
-                } !!! */
+                }
 
                 _ => {break},
             }}
@@ -328,10 +336,6 @@ fn main() {
             time += frame_time;
 
             unsafe {
-                gl::BeginQuery(gl::TIME_ELAPSED, query);
-            }
-
-            unsafe {
                 gl::Clear(gl::COLOR_BUFFER_BIT);
             }
 
@@ -375,15 +379,6 @@ fn main() {
             }
             
             window.gl_swap_window();
-
-
-            unsafe {
-                let mut test: gl::types::GLint = 0;
-                gl::EndQuery(gl::TIME_ELAPSED);
-                gl::GetQueryObjectiv(query, gl::QUERY_RESULT, &mut test);
-                //println!("GPU time: {}ms", test as f64 / 1_000_000.);
-                prev = test;
-            }
 
             //println!("Frame time: {}ms", frame_time);
         }

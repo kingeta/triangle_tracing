@@ -179,10 +179,11 @@ bool Sphere_hit(in Ray r, in const Sphere sphere, in const float t_min, in const
     }
 }
 
+#define WORLD_SIZE 4
 
-const Sphere scene_[] = Sphere[](
+const Sphere scene[] = Sphere[](
     Sphere( // Left
-        vec3(-2., 0., 0.), 1.,
+        vec3(-2.01, 0., 0.), 1.,
         Mat(
             vec3(1.),
             GLASS
@@ -313,9 +314,9 @@ bool Triangle_hit_old(in Ray r, in const Triangle t, in const float t_min, in co
 
 
 
-#define WORLD_SIZE 2
+//#define WORLD_SIZE 2
 
-const Triangle scene[] = Triangle[](
+const Triangle scene_[] = Triangle[](
     Triangle(
         mat3(vec3(0., 0., 0.), vec3(1., 0., 0.), vec3(0., 1., 0.)),
         vec3(0., 0., 1.),
@@ -337,7 +338,7 @@ const Triangle scene[] = Triangle[](
 
 
 
-bool World_hit_(in Ray r, in const Sphere[WORLD_SIZE] world, in const float t_min, in const float t_max, out Hit_Record hit_record, out int hit_which) {
+bool World_hit(in Ray r, in const Sphere[WORLD_SIZE] world, in const float t_min, in const float t_max, out Hit_Record hit_record, out int hit_which) {
     bool hit_happened = false;
     float closest = t_max;
     Hit_Record temp_record;
@@ -354,7 +355,7 @@ bool World_hit_(in Ray r, in const Sphere[WORLD_SIZE] world, in const float t_mi
     return hit_happened;
 }
 
-bool World_hit(in Ray r, in const Triangle[WORLD_SIZE] world, in const float t_min, in const float t_max, out Hit_Record hit_record, out int hit_which) {
+bool World_hit_(in Ray r, in const Triangle[WORLD_SIZE] world, in const float t_min, in const float t_max, out Hit_Record hit_record, out int hit_which) {
     bool hit_happened = false;
     float closest = t_max;
     Hit_Record temp_record;
