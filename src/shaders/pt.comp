@@ -14,7 +14,7 @@ uniform float focus_radius;
 #define INF 1.e+10
 #define CLOSE 0.001
 #define PI 3.141592653
-#define SAMPLES 4
+#define SAMPLES 16
 #define MAX_BOUNCE 6
 
 
